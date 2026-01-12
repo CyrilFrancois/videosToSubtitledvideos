@@ -1,0 +1,31 @@
+services:
+  backend:
+    build: ./backend
+    container_name: ai_transcriber_backend
+    volumes:
+      - ./data:/app/data
+      - ./backend:/app
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    ports:
+      - "8000:8000"
+    deploy: # Optional: Enable if you have an NVIDIA GPU
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  frontend:
+    build: ./frontend
+    container_name: ai_transcriber_frontend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - backend
