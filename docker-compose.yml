@@ -1,31 +1,26 @@
+version: '3.8'
+
 services:
   backend:
     build: ./backend
-    container_name: ai_transcriber_backend
-    volumes:
-      - ./data:/app/data
-      - ./backend:/app
-    environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    container_name: media-ai-backend
     ports:
       - "8000:8000"
-    deploy: # Optional: Enable if you have an NVIDIA GPU
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+    volumes:
+      - ./backend:/app
+      - ./data:/app/data  # Mounts your local media folder
+    env_file:
+      - .env
+    # Note: If using NVIDIA GPU, add the 'deploy' section here
+    restart: always
 
   frontend:
     build: ./frontend
-    container_name: ai_transcriber_frontend
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
+    container_name: media-ai-frontend
     ports:
       - "3000:3000"
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
     depends_on:
       - backend
+    restart: always
