@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+openai-whisper
+ffmpeg-python
+openai
+python-dotenv
+pydantic
+asyncio
+torch
+torchvision
+torchaudio

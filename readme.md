@@ -72,6 +72,7 @@ frontend/
     │   ├── translator.py      # LLM Translation logic
     │   └── muxer.py           # FFmpeg & Synchronization
     └── main.py                # REST API Endpoints
+    └── requirements.txt       # All the needed libs
 ```
 
 ---
