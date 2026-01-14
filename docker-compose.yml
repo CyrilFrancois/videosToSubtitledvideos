@@ -7,12 +7,24 @@ services:
     volumes:
       - ./backend:/app
       - ./data:/app/data
-      - whisper_model_cache:/root/.cache/whisper  # <--- PERSISTS THE AI MODEL
+      - whisper_model_cache:/root/.cache/whisper
     env_file:
       - .env
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
-  # ... frontend stays the same ...
+  frontend:
+    build: ./frontend
+    container_name: media-ai-frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - backend
 
 volumes:
-  whisper_model_cache: # Defines the persistent volume
+  whisper_model_cache:

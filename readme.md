@@ -34,42 +34,45 @@ The app is containerized using **Docker Compose** to manage dependencies like FF
 
 ```text
 videosToSubtitledvideos/
-├── docker-compose.yml         # Container orchestration
-├── .env                       # API Keys & Configuration
-├── readme.md                  # The Readme of the application you're reading right now
-├── data/                      # YOUR MEDIA (Mounted local folder)
-frontend/
-├── Dockerfile
-├── package.json
-├── tsconfig.json
-├── src/
-│   ├── app/
-│   │   ├── globals.css         
-│   │   ├── layout.tsx         # Root layout (Fonts, Providers)
-│   │   └── page.tsx           # The "One-Pager" Main Dashboard
-│   ├── components/
-│   │   ├── layout/
-│   │   │   └── Sidebar.tsx    # The Sticky Left Column
-│   │   ├── dashboard/
-│   │   │   ├── GlobalProgress.tsx # The Top Neon Progress Bar
-│   │   │   ├── VideoCard.tsx      # Individual Video Row/Card
-│   │   │   └── VideoList.tsx      # Scrollable container for cards
-│   ├── lib/
-│   │   ├── api.ts             # Backend Fetch/Axios calls
-│   │   ├── sse.ts             # Server-Sent Events for live logs
-│   │   └── types.ts           # TypeScript interfaces for Video/Status
-│   └── hooks/
-│       └── useSocket.ts       # Custom hook for real-time updates
-├── tailwind.config.ts         # Theme configuration
-└── package.json
-└── backend/                   # FastAPI Application
-    ├── core/
-    │   ├── scanner.py         # Subtitle & Stream discovery logic
-    │   ├── transcriber.py     # OpenAI Whisper implementation
-    │   ├── translator.py      # LLM Translation logic
-    │   └── muxer.py           # FFmpeg & Synchronization
-    └── main.py                # REST API Endpoints
-    └── requirements.txt       # All the needed libs
+├── .env
+├── docker-compose.yml
+├── readme.md
+├── TODELETE.md
+├── data/                       # Root media folder
+├── backend/
+│   ├── core/
+│   │   ├── muxer.py
+│   │   ├── scanner.py
+│   │   ├── transcriber.py
+│   │   └── translator.py
+│   ├── data/
+│   ├── database/
+│   ├── main.py
+│   ├── Dockerfile
+│   └── requirements.txt
+└── frontend/
+    ├── src/
+    │   ├── app/
+    │   │   ├── globals.css
+    │   │   ├── layout.tsx
+    │   │   └── page.tsx        # Main dashboard entry
+    │   ├── components/
+    │   │   ├── dashboard/
+    │   │   │   ├── GlobalProgress.tsx
+    │   │   │   ├── VideoCard.tsx
+    │   │   │   └── VideoList.tsx
+    │   │   └── layout/
+    │   │       └── Sidebar.tsx
+    │   ├── hooks/
+    │   │   └── useSocket.ts
+    │   └── lib/
+    │       ├── api.ts
+    │       ├── sse.ts
+    │       └── types.ts 
+    ├── Dockerfile
+    ├── next-env.d.ts
+    ├── package.json
+    └── tsconfig.json
 ```
 
 ---
