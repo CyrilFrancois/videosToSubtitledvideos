@@ -1,20 +1,49 @@
 import asyncio
 import os
 from fastapi import FastAPI, BackgroundTasks
+from pydantic import BaseModel
+from typing import List, Optional
+
+# Import your custom modules
 from core.scanner import VideoScanner
 from core.transcriber import VideoTranscriber
 from core.translator import SubtitleTranslator
 from core.muxer import VideoMuxer
-# ... (Keep the EventManager and ScanRequest/ProcessRequest models from previous step)
 
-# Initialize our AI Tools
+# --- 1. DEFINE DATA MODELS ---
+# These must be defined BEFORE the functions that use them
+
+class ScanRequest(BaseModel):
+    path: str
+    recursive: bool = True
+
+class ProcessRequest(BaseModel):
+    fileIds: List[str]
+    targetLanguage: str = "English"
+    shouldRemoveOriginal: bool = False
+
+# --- 2. INITIALIZATION ---
+
+app = FastAPI()
+
+# Assuming you have an event_manager in your core to handle progress
+# If you don't have one yet, we'll need to create a simple mock for it
+try:
+    from core.events import event_manager
+except ImportError:
+    # Fallback mock if event_manager isn't built yet
+    class MockEventManager:
+        def emit(self, fid, status, progress, msg): 
+            print(f"[{fid}] {status} ({progress}%): {msg}")
+    event_manager = MockEventManager()
+
 transcriber = VideoTranscriber(model_size="base")
-translator = SubtitleTranslator() # Ensure OPENAI_API_KEY is in .env
+translator = SubtitleTranslator() 
 muxer = VideoMuxer()
 
-# A simple global store to keep track of scanned files between requests
-# In a larger app, you'd use Redis or a Database
 active_files_cache = {}
+
+# --- 3. PIPELINE LOGIC ---
 
 async def run_pipeline(file_ids: List[str], settings: ProcessRequest):
     """The master sequence that moves each file through the AI pipeline."""
@@ -58,21 +87,18 @@ async def run_pipeline(file_ids: List[str], settings: ProcessRequest):
             # Cleanup temp files
             for temp in [temp_srt, translated_srt_path]:
                 if os.path.exists(temp): os.remove(temp)
-                
-            if settings.shouldRemoveOriginal:
-                # Add logic here to remove original if desired
-                pass
 
         except Exception as e:
             print(f"Pipeline Error for {fid}: {e}")
             event_manager.emit(fid, "error", 0, f"Error: {str(e)}")
+
+# --- 4. API ENDPOINTS ---
 
 @app.post("/scan")
 async def scan_directory(request: ScanRequest):
     scanner = VideoScanner(request.path)
     files = scanner.scan(recursive=request.recursive)
     
-    # Store in cache so /process can find them
     for f in files:
         active_files_cache[f['id']] = f
         
@@ -80,6 +106,5 @@ async def scan_directory(request: ScanRequest):
 
 @app.post("/process")
 async def start_processing(request: ProcessRequest, background_tasks: BackgroundTasks):
-    # Start the pipeline in the background so the user doesn't wait for the HTTP response
     background_tasks.add_task(run_pipeline, request.fileIds, request)
     return {"status": "started", "count": len(request.fileIds)}

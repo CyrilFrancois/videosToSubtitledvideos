@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   backend:
     build: ./backend
@@ -8,19 +6,13 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app
-      - ./data:/app/data  # Mounts your local media folder
+      - ./data:/app/data
+      - whisper_model_cache:/root/.cache/whisper  # <--- PERSISTS THE AI MODEL
     env_file:
       - .env
-    # Note: If using NVIDIA GPU, add the 'deploy' section here
-    restart: always
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
-  frontend:
-    build: ./frontend
-    container_name: media-ai-frontend
-    ports:
-      - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
-    depends_on:
-      - backend
-    restart: always
+  # ... frontend stays the same ...
+
+volumes:
+  whisper_model_cache: # Defines the persistent volume

@@ -22,8 +22,6 @@ export default function DashboardPage() {
 
   const handleScan = async () => {
     try {
-      // Note: In a real app, you'd show a directory picker or input
-      // For now, we call the API to scan the root data folder
       const data = await api.scanFolder("./data", true);
       setVideos(data.files);
       setCurrentPath(data.rootPath);
@@ -47,7 +45,6 @@ export default function DashboardPage() {
 
   return (
     <div className="flex h-screen w-full bg-[#0a0a0a] overflow-hidden">
-      {/* 1. STICKY SIDEBAR */}
       <Sidebar 
         currentPath={currentPath}
         onScanFolder={handleScan}
@@ -56,7 +53,6 @@ export default function DashboardPage() {
         onProcessAll={handleProcessAll}
       />
 
-      {/* 2. MAIN AREA */}
       <main className="flex-1 flex flex-col overflow-hidden relative">
         <GlobalProgress videos={videos} />
         
@@ -66,9 +62,8 @@ export default function DashboardPage() {
           onCancelJob={handleCancelSingle}
         />
         
-        {/* Subtle background glow effect */}
         <div className="absolute top-[-10%] right-[-10%] w-[50%] h-[50%] bg-blue-500/5 blur-[120px] pointer-events-none" />
-      </div>
+      </main>
     </div>
   );
 }

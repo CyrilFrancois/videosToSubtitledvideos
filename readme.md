@@ -44,6 +44,7 @@ frontend/
 ├── tsconfig.json
 ├── src/
 │   ├── app/
+│   │   ├── globals.css         
 │   │   ├── layout.tsx         # Root layout (Fonts, Providers)
 │   │   └── page.tsx           # The "One-Pager" Main Dashboard
 │   ├── components/
@@ -53,10 +54,6 @@ frontend/
 │   │   │   ├── GlobalProgress.tsx # The Top Neon Progress Bar
 │   │   │   ├── VideoCard.tsx      # Individual Video Row/Card
 │   │   │   └── VideoList.tsx      # Scrollable container for cards
-│   │   └── ui/                # Atomic UI pieces (Buttons, Inputs, Checkboxes)
-│   │       ├── Button.tsx
-│   │       ├── Checkbox.tsx
-│   │       └── ProgressBar.tsx
 │   ├── lib/
 │   │   ├── api.ts             # Backend Fetch/Axios calls
 │   │   ├── sse.ts             # Server-Sent Events for live logs
@@ -95,6 +92,7 @@ WHISPER_MODEL=base  # tiny, base, small, medium, large
 ### 3. Deployment
 ```bash
 docker-compose up --build
+docker-compose up
 ```
 The application will be available at:
 * **Frontend:** `http://localhost:3000`
