@@ -26,28 +26,33 @@ export default function DashboardPage() {
   useVideoStatus(videos, setVideos);
 
   const handleScan = useCallback(async () => {
+    console.log("Scan button clicked! Target path:", currentPath); // Debug Log
     setIsScanning(true);
     try {
-      // We scan "/data" because that's where MEDIA_PATH is mounted in Docker
       const data = await api.scanFolder("/data", true);
+      console.log("Backend responded with data:", data); // Debug Log
       
-      // Map backend fields to frontend expected fields if necessary
-      const mappedVideos = data.files.map((v: any) => ({
-        ...v,
-        filename: v.fileName || v.filename, // Handle naming variations
-        status: v.status || 'idle',
-        progress: v.progress || 0,
-        current_step: v.current_step || 'Ready'
-      }));
-
-      setVideos(mappedVideos);
-      setCurrentPath(data.currentPath || data.rootPath);
+      if (data.files && data.files.length > 0) {
+        const mappedVideos = data.files.map((v: any) => ({
+          ...v,
+          filename: v.fileName || v.filename,
+          status: v.status || 'idle',
+          progress: v.progress || 0,
+          current_step: v.current_step || 'Ready'
+        }));
+        setVideos(mappedVideos);
+        setCurrentPath(data.currentPath);
+      } else {
+        console.warn("No files found in /data");
+        alert("No video files found in the mounted directory.");
+      }
     } catch (error) {
-      console.error("Scan failed:", error);
+      console.error("Critical Scan Failure:", error);
+      alert("Could not connect to the backend. Is the Docker container running?");
     } finally {
       setIsScanning(false);
     }
-  }, []);
+  }, [currentPath]);
 
   const handleProcessAll = async () => {
     if (videos.length === 0) return;

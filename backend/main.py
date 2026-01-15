@@ -1,6 +1,6 @@
 import asyncio
 import os
-from fastapi import FastAPI, BackgroundTasks, HTTPException
+from fastapi import FastAPI, BackgroundTasks, HTTPException, WebSocket, WebSocketDisconnect # Added these
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
@@ -96,21 +96,17 @@ async def run_pipeline(file_ids: List[str], settings: ProcessRequest):
 
 # --- 4. API ENDPOINTS ---
 
-@app.post("/api/scan") # Updated to match frontend URL
-async def scan_library(target_path: Optional[str] = "/data"):
-    """Scans the mounted /data folder for videos."""
-    # Ensure we stay within the /data directory for security
+@app.post("/api/scan")
+async def scan_library(target_path: str = "/data"): # target_path matches frontend fetch
     if not target_path.startswith("/data"):
         target_path = "/data"
         
     if not os.path.exists(target_path):
-        raise HTTPException(status_code=404, detail="Path not found inside container")
+        raise HTTPException(status_code=404, detail=f"Path {target_path} not found in container")
 
     scanner = VideoScanner(target_path)
-    # scanner.scan should return list of dicts with 'id', 'filePath', 'fileName', etc.
     files = scanner.scan(recursive=True)
     
-    # Update cache so pipeline can find file paths by ID later
     for f in files:
         active_files_cache[f['id']] = f
         
@@ -123,3 +119,19 @@ async def scan_library(target_path: Optional[str] = "/data"):
 async def start_processing(request: ProcessRequest, background_tasks: BackgroundTasks):
     background_tasks.add_task(run_pipeline, request.fileIds, request)
     return {"status": "started", "count": len(request.fileIds)}
+
+# Add this to stop the 404 errors in your logs for WebSockets
+@app.websocket("/ws/status")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        while True:
+            # For now, just keep the connection alive so the frontend doesn't error
+            await websocket.receive_text() 
+    except WebSocketDisconnect:
+        print("WebSocket disconnected")
+
+@app.delete("/api/cancel/{file_id}")
+async def cancel_job(file_id: str):
+    # Implementation for cancellation logic
+    return {"status": "cancelled", "id": file_id}

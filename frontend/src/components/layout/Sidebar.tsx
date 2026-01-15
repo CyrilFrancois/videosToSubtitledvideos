@@ -24,7 +24,7 @@ export default function Sidebar({
         <section>
           <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-4 block">Source Management</label>
           <button 
-            onClick={onScanFolder}
+            onClick={() => onScanFolder()} 
             disabled={isScanning}
             className={`w-full flex items-center justify-center gap-2 border p-3 rounded-xl transition-all text-sm font-medium group ${
               isScanning 
@@ -34,7 +34,7 @@ export default function Sidebar({
           >
             <Folder size={18} className={`${isScanning ? 'text-gray-500' : 'text-blue-400 group-hover:scale-110'} transition-transform`} />
             {isScanning ? "Scanning..." : "Initialize Library Scan"}
-          </button>
+          </button> 
           
           <div className="mt-3 flex flex-col gap-1">
             <span className="text-[9px] text-gray-500 uppercase font-bold px-1">Active Mount</span>
