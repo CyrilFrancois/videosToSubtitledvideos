@@ -4,11 +4,10 @@ import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   Folder, Volume2, Text, Link as LinkIcon, ChevronRight, 
-  Clock, Upload, Cpu, ChevronDown, Check
+  Clock, Upload, Cpu, ChevronDown, Check, Info
 } from 'lucide-react';
 
 // --- SUB-COMPONENT: PortalDropdown ---
-// Fixes the "ReferenceError" by defining the helper inside the file
 function PortalDropdown({ isOpen, anchorRef, children }) {
   const [coords, setCoords] = useState({ top: 0, left: 0, width: 0 });
 
@@ -103,34 +102,46 @@ function LanguageSelector({ label, selected, options, onToggle, isSingle = false
 // --- MAIN COMPONENT ---
 export default function VideoCard({ video, onStart, onCancel, onNavigate, globalSettings }) {
   const isDir = video.is_directory;
+  const subInfo = video.subtitleInfo || { hasSubtitles: false, languages: [], count: 0, subType: null };
   const [showOffsets, setShowOffsets] = useState(false);
   
-  // Local states
-  const [srcLang, setSrcLang] = useState(globalSettings?.sourceLang || ['auto']);
+  // 1. SMART INITIALIZATION: Check if scanner found specific languages
+  const [srcLang, setSrcLang] = useState(
+    subInfo.hasSubtitles && subInfo.languages[0] !== 'auto' 
+      ? [subInfo.languages[0]] 
+      : (globalSettings?.sourceLang || ['auto'])
+  );
   const [outLangs, setOutLangs] = useState(globalSettings?.targetLanguages || ['fr']);
   
+  // 2. WORKFLOW DECISION LOGIC
   const determineBestWorkflow = () => {
     if (globalSettings?.workflowMode === 'force_ai') return 'whisper';
-    return video.has_matching_srt ? 'srt' : 'whisper';
+    if (subInfo.subType === 'embedded') return 'embedded';
+    if (subInfo.hasSubtitles) return 'srt';
+    return 'whisper';
   };
 
   const [workflow, setWorkflow] = useState(determineBestWorkflow());
 
-  // Effect to sync with Sidebar changes
+  // Effect to sync with Sidebar and Backend detection results
   useEffect(() => {
     if (globalSettings) {
-      setSrcLang(globalSettings.sourceLang || ['auto']);
       setOutLangs(globalSettings.targetLanguages || ['fr']);
       
       if (globalSettings.workflowMode === 'force_ai') {
         setWorkflow('whisper');
       } else {
-        setWorkflow(video.has_matching_srt ? 'srt' : 'whisper');
+        setWorkflow(determineBestWorkflow());
+      }
+
+      // Update source lang if global settings change, unless we already have a detection hit
+      if (!subInfo.hasSubtitles || subInfo.languages[0] === 'auto') {
+        setSrcLang(globalSettings.sourceLang || ['auto']);
       }
     }
-  }, [globalSettings, video.has_matching_srt]);
+  }, [globalSettings, subInfo.hasSubtitles, subInfo.subType]);
 
-  const rawLangData = process.env.NEXT_PUBLIC_LANGUAGES || '{"English":"en", "French":"fr"}';
+  const rawLangData = process.env.NEXT_PUBLIC_LANGUAGES || '{"English":"en", "French":"fr", "Spanish":"es", "German":"de"}';
   const availableLanguages = Object.entries(JSON.parse(rawLangData)).map(([label, id]) => ({ id, label }));
 
   if (isDir) {
@@ -156,6 +167,16 @@ export default function VideoCard({ video, onStart, onCancel, onNavigate, global
           <div className="flex items-center gap-2">
             <h3 className="text-sm font-semibold text-slate-100 truncate">{video.fileName}</h3>
             <span className="text-[9px] text-gray-600 font-mono uppercase px-1.5 py-0.5 bg-white/5 rounded">{video.extension}</span>
+            
+            {/* SMART BADGE: SUBTITLES DETECTED */}
+            {subInfo.hasSubtitles && (
+              <div className="flex items-center gap-1 bg-indigo-500/10 border border-indigo-500/30 px-1.5 py-0.5 rounded animate-in fade-in zoom-in duration-300">
+                <Check size={8} className="text-indigo-400" />
+                <span className="text-[8px] font-bold text-indigo-400 uppercase tracking-tighter">
+                  {subInfo.subType === 'embedded' ? 'Embedded Subs' : 'SRT Found'}
+                </span>
+              </div>
+            )}
           </div>
         </div>
         <div className="text-right shrink-0">
@@ -178,13 +199,14 @@ export default function VideoCard({ video, onStart, onCancel, onNavigate, global
           <label className="text-[9px] text-gray-600 uppercase font-bold tracking-tight">Workflow Mode</label>
           <div className="flex flex-col gap-1 bg-black/40 p-1.5 rounded border border-white/5 min-h-[85px] justify-center">
             <button 
-              disabled={!video.has_matching_srt}
-              onClick={() => setWorkflow('srt')}
+              disabled={!subInfo.hasSubtitles}
+              onClick={() => setWorkflow(subInfo.subType === 'embedded' ? 'embedded' : 'srt')}
               className={`flex items-center gap-2 px-2 py-1 text-[9px] font-bold rounded uppercase transition-colors ${
-                workflow === 'srt' ? 'bg-indigo-500 text-white' : 'text-gray-500 hover:text-gray-300 disabled:opacity-10 disabled:grayscale'
+                (workflow === 'srt' || workflow === 'embedded') ? 'bg-indigo-500 text-white' : 'text-gray-500 hover:text-gray-300 disabled:opacity-10 disabled:grayscale'
               }`}
             >
-              <LinkIcon size={10} /> {video.has_matching_srt ? 'Use Matching SRT' : 'No SRT Found'}
+              <LinkIcon size={10} /> 
+              {subInfo.subType === 'embedded' ? 'Use Embedded' : subInfo.hasSubtitles ? 'Use Matching SRT' : 'No Subtitles'}
             </button>
             <button 
               onClick={() => setWorkflow('external')}

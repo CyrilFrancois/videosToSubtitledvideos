@@ -6,27 +6,27 @@ import GlobalProgress from '@/components/dashboard/GlobalProgress';
 import VideoList from '@/components/dashboard/VideoList';
 import { api } from '@/lib/api';
 import { Folder } from 'lucide-react';
+import { VideoFile } from '@/lib/types';
 
 export default function DashboardPage() {
-  const [items, setItems] = useState<any[]>([]); 
+  const [items, setItems] = useState<VideoFile[]>([]); 
   const [isScanning, setIsScanning] = useState(false);
   const [currentPath, setCurrentPath] = useState("/data");
   const [mounted, setMounted] = useState(false);
   
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  // 1. Updated globalSettings with the new keys
+  // Global Settings initialized for the "Smart" logic
   const [globalSettings, setGlobalSettings] = useState({
-    sourceLang: ['auto'],        // Added
+    sourceLang: ['auto'],
     targetLanguages: ['fr'], 
-    workflowMode: 'hybrid',      // Added
+    workflowMode: 'hybrid',
     modelSize: 'base',
-    autoGenerate: true,          // Added
+    autoGenerate: true,
     shouldMux: true,
     shouldRemoveOriginal: false
   });
 
-  // Initial Deep Scan
   useEffect(() => {
     setMounted(true);
     handleInitialDeepScan();
@@ -35,20 +35,22 @@ export default function DashboardPage() {
   const handleInitialDeepScan = useCallback(async () => {
     setIsScanning(true);
     try {
-      const data = await api.scanFolder("/data", { recursive: true }); 
+      // API now returns the full nested tree
+      const data = await api.scanFolder("/data", true); 
       if (data && data.files) {
-        const processDeepItems = (files: any[]): any[] => {
+        const processDeepItems = (files: any[]): VideoFile[] => {
           return files.map(item => ({
             ...item,
             id: item.filePath,
             status: item.is_directory ? 'folder' : 'idle',
             progress: 0,
+            // Ensure subtitleInfo is passed through correctly
+            subtitleInfo: item.subtitleInfo || { hasSubtitles: false, languages: [], count: 0 },
             children: item.is_directory ? processDeepItems(item.children || []) : null
           }));
         };
 
-        const processed = processDeepItems(data.files);
-        setItems(processed);
+        setItems(processDeepItems(data.files));
       }
     } catch (e) {
       console.error("❌ Deep Scan Error:", e);
@@ -57,20 +59,20 @@ export default function DashboardPage() {
     }
   }, []);
 
+  // Helper to flatten the tree for processing while maintaining current state
   const getSelectedFilesList = useCallback(() => {
-    const selectedFiles: any[] = [];
-    const traverse = (list: any[]) => {
+    const selectedFiles: VideoFile[] = [];
+    const traverse = (list: VideoFile[]) => {
       list.forEach(item => {
         if (!item.is_directory && selectedIds.has(item.id)) {
-          // 3. Merging global settings into the job options
-          selectedFiles.push({ ...item, options: { ...globalSettings } });
+          selectedFiles.push(item);
         }
         if (item.children) traverse(item.children);
       });
     };
     traverse(items);
     return selectedFiles;
-  }, [items, selectedIds, globalSettings]);
+  }, [items, selectedIds]);
 
   const selectedFiles = useMemo(() => getSelectedFilesList(), [getSelectedFilesList]);
   const selectedFilesCount = selectedFiles.length;
@@ -96,8 +98,24 @@ export default function DashboardPage() {
 
   const handleProcessSelected = async () => {
     if (selectedFilesCount === 0) return alert("Please select at least one video file.");
-    console.log("🚀 [BATCH START] Payload:", selectedFiles);
-    // Here you would typically call your backend API with selectedFiles
+    
+    try {
+      const fileIds = selectedFiles.map(f => f.id);
+      await api.startProcessing(fileIds, globalSettings);
+      
+      // Update UI status to 'processing' for selected files
+      const markProcessing = (list: VideoFile[]): VideoFile[] => {
+        return list.map(item => ({
+          ...item,
+          status: selectedIds.has(item.id) && !item.is_directory ? 'processing' : item.status,
+          children: item.children ? markProcessing(item.children) : null
+        })) as VideoFile[];
+      };
+      setItems(prev => markProcessing(prev));
+      
+    } catch (e) {
+      alert("Error starting process: " + (e as Error).message);
+    }
   };
 
   if (!mounted) return <div className="bg-[#0a0a0a] h-screen w-full" />;
@@ -128,11 +146,13 @@ export default function DashboardPage() {
             <VideoList 
               videos={items} 
               onNavigate={setCurrentPath} 
-              onStartJob={(id) => console.log("Single Start:", id)} 
-              onCancelJob={(id) => console.log("Cancel:", id)}
+              onStartJob={(id) => {
+                // Individual start
+                api.startProcessing([id], globalSettings);
+              }} 
+              onCancelJob={(id) => api.cancelJob(id)}
               selectedIds={selectedIds}
               toggleSelection={toggleSelection}
-              // 2. Added globalSettings prop here
               globalSettings={globalSettings}
             />
           )}

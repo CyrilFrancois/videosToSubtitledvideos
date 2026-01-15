@@ -1,40 +1,47 @@
-export type ProcessingStatus = 'idle' | 'scanning' | 'transcribing' | 'translating' | 'muxing' | 'done' | 'error';
+export type ProcessingStatus = 'idle' | 'processing' | 'done' | 'error' | 'folder';
 
-export interface SubtitleStream {
-  id: string;
-  language: string;
-  isExternal: boolean;
-  path?: string;      // For external .srt files
-  codec?: string;     // e.g., 'subrip', 'mov_text'
-  isSdh: boolean;     // Subtitles for Deaf and Hard of Hearing (more complete)
-  fileSize?: number;  // Used for our "Heaviest/Longest" heuristic
-}
-
-export interface AudioStream {
-  id: string;
-  language: string;
-  title?: string;
+export interface SubtitleInfo {
+  hasSubtitles: boolean;
+  subType: 'embedded' | 'external' | 'external_isolated' | null;
+  languages: string[];
+  count: number;
 }
 
 export interface VideoFile {
-  id: string;
+  id: string;          // Full path from backend
   fileName: string;
   filePath: string;
-  extension: string;
-  audioStreams: AudioStream[];
-  internalSubtitles: SubtitleStream[];
-  externalSubtitles: SubtitleStream[];
-  status: ProcessingStatus;
-  progress: number; // 0 to 100
-  currentTask?: string;
+  extension?: string;
+  is_directory: boolean;
   
-  // User selections for this specific file
-  outputLanguages: string[];
-  shouldMux: boolean;
-  shouldRemoveOriginal: boolean;
+  // Smart Metadata from scanner.py
+  subtitleInfo?: SubtitleInfo;
+  has_matching_srt: boolean; // Backward compatibility
+  
+  // UI State
+  status: ProcessingStatus;
+  progress: number;    // 0 to 100
+  currentTask?: string;
+
+  // Tree Structure
+  children?: VideoFile[];
+
+  // Processing Settings (for the Execute Job call)
+  selectedSourceLang?: string;
+  selectedTargetLangs?: string[];
+  workflowOverride?: 'srt' | 'whisper' | 'external';
 }
 
 export interface ScanResponse {
-  rootPath: string;
+  status: string;
+  currentPath: string;
   files: VideoFile[];
+}
+
+export interface ProcessSettings {
+  fileIds: string[];
+  sourceLang: string;
+  targetLanguages: string[];
+  workflowMode: 'hybrid' | 'force_ai';
+  shouldRemoveOriginal: boolean;
 }

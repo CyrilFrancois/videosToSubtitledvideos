@@ -41,10 +41,12 @@ videosToSubtitledvideos/
 ├── data/                       # Root media folder
 ├── backend/
 │   ├── core/
+│   │   ├── __init__.py
 │   │   ├── muxer.py
 │   │   ├── scanner.py
 │   │   ├── transcriber.py
-│   │   └── translator.py
+│   │   └── translator.py 
+│   │   └── subtitle_processor.py
 │   ├── data/
 │   ├── database/
 │   ├── main.py

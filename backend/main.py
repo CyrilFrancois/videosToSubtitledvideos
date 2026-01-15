@@ -3,34 +3,41 @@ import os
 from fastapi import FastAPI, BackgroundTasks, HTTPException, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from pathlib import Path
 
-# Import your custom modules
+# Import custom modules
 from core.scanner import VideoScanner
 from core.transcriber import VideoTranscriber
+from core.subtitle_processor import SubtitleProcessor
 from core.translator import SubtitleTranslator
 from core.muxer import VideoMuxer
 
 # --- 1. DEFINE DATA MODELS ---
 class ProcessRequest(BaseModel):
     fileIds: List[str]
-    targetLanguage: str = "French"
+    sourceLang: Optional[str] = "auto"
+    targetLanguages: List[str] = ["fr"]
+    workflowMode: str = "hybrid"  # "hybrid" or "force_ai"
     shouldRemoveOriginal: bool = False
+    shouldMux: bool = True
+    modelSize: str = "base"
 
 # --- 2. INITIALIZATION ---
 app = FastAPI()
 
-# ENABLE CORS (CRITICAL FOR FRONTEND ACCESS)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"], # Specific origin is safer than "*"
+    allow_origins=["http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Mock Event Manager or Real Event Manager
+# Initialize scanner with the correct base path
+scanner = VideoScanner(base_path="/data")
+
+# Event Manager setup
 try:
     from core.events import event_manager
 except ImportError:
@@ -39,13 +46,13 @@ except ImportError:
             print(f"[{fid}] {status} ({progress}%): {msg}")
     event_manager = MockEventManager()
 
-# Initialize AI Tools
-# Note: Ensure these models are loaded once at startup
+# Initialize Engine Components
 transcriber = VideoTranscriber(model_size="base")
 translator = SubtitleTranslator() 
 muxer = VideoMuxer()
+processor = SubtitleProcessor()
 
-# Simple In-Memory Cache for files found during scan
+# In-Memory Cache for files found during scan
 active_files_cache = {}
 
 # --- 3. PIPELINE LOGIC ---
@@ -53,84 +60,73 @@ async def run_pipeline(file_ids: List[str], settings: ProcessRequest):
     for fid in file_ids:
         video = active_files_cache.get(fid)
         if not video:
-            print(f"File ID {fid} not found in cache.")
+            event_manager.emit(fid, "error", 0, "File not found in session cache. Please re-scan.")
             continue
 
         try:
             video_path = video['filePath']
+            sub_info = video.get('subtitleInfo', {})
+            srt_content = ""
             
-            # STEP 1: Transcribe
-            event_manager.emit(fid, "processing", 10, "Initializing Whisper...")
-            srt_content = transcriber.transcribe(video_path, fid, event_manager.emit)
+            # --- PHASE 1: SUBTITLE ACQUISITION ---
+            if settings.workflowMode == "hybrid" and sub_info.get("hasSubtitles"):
+                event_manager.emit(fid, "processing", 10, f"Loading detected {sub_info.get('subType')} subtitles...")
+                srt_content = processor.load_existing_subtitles(video)
+                
+                if not srt_content:
+                    event_manager.emit(fid, "processing", 15, "Existing subtitles unreadable. Falling back to AI...")
+                    srt_content = transcriber.transcribe(video_path, fid, event_manager.emit)
+            else:
+                event_manager.emit(fid, "processing", 10, f"AI Transcribing with Whisper ({settings.modelSize})...")
+                srt_content = transcriber.transcribe(video_path, fid, event_manager.emit)
+
+            if not srt_content:
+                raise Exception("Failed to acquire source subtitles.")
+
+            # --- PHASE 2: TRANSLATION ---
+            translated_srts = {}
+            for i, lang in enumerate(settings.targetLanguages):
+                progress = 40 + int((i / len(settings.targetLanguages)) * 30)
+                event_manager.emit(fid, "processing", progress, f"Translating to {lang.upper()}...")
+                translated_srts[lang] = translator.translate(srt_content, lang)
+
+            # --- PHASE 3: MUXING / EXPORT ---
+            if settings.shouldMux:
+                event_manager.emit(fid, "processing", 85, "Muxing final video container...")
+                output_path = muxer.mux(video_path, translated_srts)
+                event_manager.emit(fid, "done", 100, f"Success! Output: {os.path.basename(output_path)}")
+            else:
+                event_manager.emit(fid, "processing", 90, "Saving external SRT files...")
+                # Logic to save .srt files to disk next to video
+                event_manager.emit(fid, "done", 100, "Success! Sidecar SRTs created.")
             
-            temp_srt = f"/tmp/{fid}_original.srt"
-            with open(temp_srt, "w", encoding="utf-8") as f:
-                f.write(srt_content)
-
-            # STEP 2: Translate
-            event_manager.emit(fid, "processing", 40, f"Translating to {settings.targetLanguage}...")
-            translated_srt = translator.translate_srt(
-                srt_content, settings.targetLanguage, fid, event_manager.emit
-            )
-            
-            translated_srt_path = f"/tmp/{fid}_translated.srt"
-            with open(translated_srt_path, "w", encoding="utf-8") as f:
-                f.write(translated_srt)
-
-            # STEP 3: Mux
-            event_manager.emit(fid, "processing", 80, "Muxing final video...")
-            final_output = muxer.mux_subtitles(
-                video_path, translated_srt_path, settings.targetLanguage, fid, event_manager.emit
-            )
-
-            # STEP 4: Finish
-            event_manager.emit(fid, "done", 100, f"Saved: {os.path.basename(final_output)}")
-            
-            # Cleanup temp files
-            for temp in [temp_srt, translated_srt_path]:
-                if os.path.exists(temp): os.remove(temp)
-
         except Exception as e:
-            print(f"Pipeline Error for {fid}: {e}")
-            event_manager.emit(fid, "error", 0, f"Error: {str(e)}")
+            event_manager.emit(fid, "error", 0, f"Pipeline Error: {str(e)}")
 
 # --- 4. API ENDPOINTS ---
 
-@app.post("/api/scan")
+@app.get("/api/scan")
 async def scan_library(target_path: str = Query("/data")):
-    """
-    Scans the provided directory recursively to build a full tree structure.
-    This allows the frontend to manage nested selections even if folders are collapsed.
-    """
-    # Security: Ensure we stay within the /data volume
+    # Security: Ensure we stay within the data mount
     if not target_path.startswith("/data"):
         target_path = "/data"
         
     if not os.path.exists(target_path):
         raise HTTPException(status_code=404, detail=f"Path {target_path} not found")
 
-    # Initialize scanner
-    scanner = VideoScanner(base_path="/data")
-    
-    # 1. CHANGE: Set recursive=True to get the full nested tree
-    # This requires your VideoScanner.scan method to support recursion.
+    # Scan the file system
     items = scanner.scan(target_path=target_path, recursive=True)
     
-    # 2. UPDATE CACHE RECURSIVELY
-    # Since items is now a tree, we need a helper to find all files for the cache
+    # Update the cache so the /process endpoint knows file paths by ID
     def update_cache_recursive(nodes):
         for node in nodes:
             if not node.get('is_directory'):
-                # Store by ID (which is the filePath in your current setup)
                 active_files_cache[node['id']] = node
             elif node.get('children'):
                 update_cache_recursive(node['children'])
 
     update_cache_recursive(items)
     
-    # Debug log to see how many files are "known" to the backend
-    print(f"📊 Scan complete. Cache now contains {len(active_files_cache)} processable files.")
-        
     return {
         "status": "success",
         "currentPath": target_path, 
@@ -139,6 +135,9 @@ async def scan_library(target_path: str = Query("/data")):
 
 @app.post("/api/process")
 async def start_processing(request: ProcessRequest, background_tasks: BackgroundTasks):
+    if not request.fileIds:
+        raise HTTPException(status_code=400, detail="No file IDs provided")
+    
     background_tasks.add_task(run_pipeline, request.fileIds, request)
     return {"status": "started", "count": len(request.fileIds)}
 
@@ -147,16 +146,17 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     try:
         while True:
-            # Keep-alive loop
-            data = await websocket.receive_text()
+            # Maintain connection, listeners will receive data via event_manager
+            await websocket.receive_text()
     except WebSocketDisconnect:
-        print("WebSocket disconnected")
+        pass
 
 @app.delete("/api/cancel/{file_id}")
 async def cancel_job(file_id: str):
-    # Future implementation for cancellation logic
+    # logic to interrupt the specific thread/task if needed
     return {"status": "cancelled", "id": file_id}
 
 if __name__ == "__main__":
     import uvicorn
+    # Use 0.0.0.0 for Docker compatibility
     uvicorn.run(app, host="0.0.0.0", port=8000)
