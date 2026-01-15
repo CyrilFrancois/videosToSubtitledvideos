@@ -170,11 +170,28 @@ export default function VideoCard({ video, onStart, onCancel, onNavigate, global
             
             {/* SMART BADGE: SUBTITLES DETECTED */}
             {subInfo.hasSubtitles && (
-              <div className="flex items-center gap-1 bg-indigo-500/10 border border-indigo-500/30 px-1.5 py-0.5 rounded animate-in fade-in zoom-in duration-300">
+              <div className="group/tooltip relative flex items-center gap-1 bg-indigo-500/10 border border-indigo-500/30 px-1.5 py-0.5 rounded animate-in fade-in zoom-in duration-300 cursor-help">
                 <Check size={8} className="text-indigo-400" />
                 <span className="text-[8px] font-bold text-indigo-400 uppercase tracking-tighter">
                   {subInfo.subType === 'embedded' ? 'Embedded Subs' : 'SRT Found'}
                 </span>
+
+                {/* TOOLTIP ON HOVER */}
+                {subInfo.foundFiles && subInfo.foundFiles.length > 0 && (
+                  <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 hidden group-hover/tooltip:block z-50">
+                    <div className="bg-[#1a1a1a] border border-indigo-500/50 text-[9px] text-indigo-200 px-2 py-1 rounded shadow-xl whitespace-nowrap">
+                      <p className="border-b border-white/10 mb-1 pb-1 text-gray-500 font-bold uppercase">Linked Files:</p>
+                      {subInfo.foundFiles.map((fname, idx) => (
+                        <div key={idx} className="flex items-center gap-1">
+                          <div className="w-1 h-1 bg-indigo-400 rounded-full" />
+                          {fname}
+                        </div>
+                      ))}
+                      {/* Tooltip Arrow */}
+                      <div className="absolute top-full left-1/2 -translate-x-1/2 border-8 border-transparent border-t-[#1a1a1a]" />
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

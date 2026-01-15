@@ -13,6 +13,7 @@ class VideoScanner:
     def _get_subtitle_info(self, file_entry: os.DirEntry, all_entries: List[os.DirEntry]) -> Dict:
         """
         Implements the 4 detection rules: Same-name, Subfolder, Isolation, and Embedded.
+        Now tracks specific filenames for the frontend tooltip.
         """
         video_path = file_entry.path
         video_name_stem = os.path.splitext(file_entry.name)[0]
@@ -21,24 +22,31 @@ class VideoScanner:
         found_subs = False
         sub_type = None
         languages = []
+        found_files = [] # New list to store actual filenames
 
         # 1. & 2. Same-name detection (Same folder or 'Subs' subfolder)
-        # We look for: movie.srt, movie.en.srt, Subs/movie.srt, etc.
-        search_dirs = [parent_dir, os.path.join(parent_dir, "Subs"), os.path.join(parent_dir, "Subtitles")]
+        search_dirs = [
+            parent_dir, 
+            os.path.join(parent_dir, "Subs"), 
+            os.path.join(parent_dir, "Subtitles")
+        ]
         
         for d in search_dirs:
-            if found_subs: break
             if not os.path.exists(d): continue
             
             for f in os.listdir(d):
                 if f.lower().endswith(self.subtitle_extensions) and f.lower().startswith(video_name_stem.lower()):
                     found_subs = True
                     sub_type = "external"
-                    # Simple regex to catch language tags like .en.srt or _eng.srt
+                    if f not in found_files:
+                        found_files.append(f)
+                    
+                    # Regex to catch language tags like .en.srt or _eng.srt
                     lang_match = re.search(r'[\._\-]([a-z]{2,3})[\._\-]', f.lower())
                     if lang_match:
-                        languages.append(lang_match.group(1))
-                    break
+                        lang = lang_match.group(1)
+                        if lang not in languages:
+                            languages.append(lang)
 
         # 3. Isolation Rule: Only one movie in folder? Take any SRT found there.
         if not found_subs:
@@ -49,9 +57,9 @@ class VideoScanner:
                 if loose_subs:
                     found_subs = True
                     sub_type = "external_isolated"
+                    found_files.extend(loose_subs)
 
         # 4. Embedded detection via ffprobe
-        # Even if external exists, we check for embedded tracks
         try:
             cmd = [
                 'ffprobe', '-v', 'quiet', '-print_format', 'json', 
@@ -79,12 +87,15 @@ class VideoScanner:
             "hasSubtitles": found_subs,
             "subType": sub_type,
             "languages": languages,
+            "foundFiles": found_files, # Returned to frontend for tooltip
             "count": len(languages) if languages != ["auto"] else 1
         }
 
     def scan(self, target_path: str = None, recursive: bool = True) -> List[Dict]:
         path_to_scan = target_path if target_path else self.base_path
-        if not path_to_scan.startswith(self.base_path):
+        
+        # Security check: Ensure scanning stays within base path
+        if not os.path.abspath(path_to_scan).startswith(os.path.abspath(self.base_path)):
             path_to_scan = self.base_path
 
         items = []
@@ -93,7 +104,7 @@ class VideoScanner:
             if not os.path.exists(path_to_scan):
                 return []
 
-            # Pre-list entries to support the Isolation Rule logic
+            # Pre-list entries for the Isolation Rule logic
             entries = list(os.scandir(path_to_scan))
             
             for entry in entries:
@@ -111,7 +122,7 @@ class VideoScanner:
                     items.append(folder_data)
                 
                 elif entry.is_file() and entry.name.lower().endswith(self.supported_extensions):
-                    # Fetch the new subtitle metadata
+                    # Fetch detailed subtitle metadata
                     sub_info = self._get_subtitle_info(entry, entries)
                     
                     items.append({
@@ -122,10 +133,11 @@ class VideoScanner:
                         "is_directory": False,
                         "status": "idle",
                         "progress": 0,
-                        "subtitleInfo": sub_info, # New metadata field
-                        "has_matching_srt": sub_info["hasSubtitles"] # Keep for backward compatibility
+                        "subtitleInfo": sub_info,
+                        "has_matching_srt": sub_info["hasSubtitles"] 
                     })
             
+            # Sort: Directories first, then alphabetically
             items.sort(key=lambda x: (not x['is_directory'], x['fileName'].lower()))
             
         except Exception as e:
