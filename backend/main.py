@@ -1,6 +1,6 @@
 import asyncio
 import os
-from fastapi import FastAPI, BackgroundTasks, HTTPException, WebSocket, WebSocketDisconnect # Added these
+from fastapi import FastAPI, BackgroundTasks, HTTPException, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
@@ -13,10 +13,6 @@ from core.translator import SubtitleTranslator
 from core.muxer import VideoMuxer
 
 # --- 1. DEFINE DATA MODELS ---
-class ScanRequest(BaseModel):
-    path: str = "/data"
-    recursive: bool = True
-
 class ProcessRequest(BaseModel):
     fileIds: List[str]
     targetLanguage: str = "French"
@@ -28,13 +24,13 @@ app = FastAPI()
 # ENABLE CORS (CRITICAL FOR FRONTEND ACCESS)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # In production, replace with ["http://localhost:3000"]
+    allow_origins=["http://localhost:3000"], # Specific origin is safer than "*"
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Mock Event Manager
+# Mock Event Manager or Real Event Manager
 try:
     from core.events import event_manager
 except ImportError:
@@ -44,6 +40,7 @@ except ImportError:
     event_manager = MockEventManager()
 
 # Initialize AI Tools
+# Note: Ensure these models are loaded once at startup
 transcriber = VideoTranscriber(model_size="base")
 translator = SubtitleTranslator() 
 muxer = VideoMuxer()
@@ -55,13 +52,15 @@ active_files_cache = {}
 async def run_pipeline(file_ids: List[str], settings: ProcessRequest):
     for fid in file_ids:
         video = active_files_cache.get(fid)
-        if not video: continue
+        if not video:
+            print(f"File ID {fid} not found in cache.")
+            continue
 
         try:
             video_path = video['filePath']
             
             # STEP 1: Transcribe
-            event_manager.emit(fid, "transcribing", 0, "Initializing Whisper...")
+            event_manager.emit(fid, "processing", 10, "Initializing Whisper...")
             srt_content = transcriber.transcribe(video_path, fid, event_manager.emit)
             
             temp_srt = f"/tmp/{fid}_original.srt"
@@ -69,7 +68,7 @@ async def run_pipeline(file_ids: List[str], settings: ProcessRequest):
                 f.write(srt_content)
 
             # STEP 2: Translate
-            event_manager.emit(fid, "translating", 0, f"Translating to {settings.targetLanguage}...")
+            event_manager.emit(fid, "processing", 40, f"Translating to {settings.targetLanguage}...")
             translated_srt = translator.translate_srt(
                 srt_content, settings.targetLanguage, fid, event_manager.emit
             )
@@ -79,7 +78,7 @@ async def run_pipeline(file_ids: List[str], settings: ProcessRequest):
                 f.write(translated_srt)
 
             # STEP 3: Mux
-            event_manager.emit(fid, "muxing", 0, "Muxing final video...")
+            event_manager.emit(fid, "processing", 80, "Muxing final video...")
             final_output = muxer.mux_subtitles(
                 video_path, translated_srt_path, settings.targetLanguage, fid, event_manager.emit
             )
@@ -87,6 +86,7 @@ async def run_pipeline(file_ids: List[str], settings: ProcessRequest):
             # STEP 4: Finish
             event_manager.emit(fid, "done", 100, f"Saved: {os.path.basename(final_output)}")
             
+            # Cleanup temp files
             for temp in [temp_srt, translated_srt_path]:
                 if os.path.exists(temp): os.remove(temp)
 
@@ -97,22 +97,33 @@ async def run_pipeline(file_ids: List[str], settings: ProcessRequest):
 # --- 4. API ENDPOINTS ---
 
 @app.post("/api/scan")
-async def scan_library(target_path: str = "/data"): # target_path matches frontend fetch
+async def scan_library(target_path: str = Query("/data")):
+    """
+    Scans the provided directory for videos and subfolders.
+    """
+    # Security: Ensure we stay within the /data volume
     if not target_path.startswith("/data"):
         target_path = "/data"
         
     if not os.path.exists(target_path):
-        raise HTTPException(status_code=404, detail=f"Path {target_path} not found in container")
+        raise HTTPException(status_code=404, detail=f"Path {target_path} not found")
 
-    scanner = VideoScanner(target_path)
-    files = scanner.scan(recursive=True)
+    # Initialize scanner with the base path
+    scanner = VideoScanner(base_path="/data")
     
-    for f in files:
-        active_files_cache[f['id']] = f
+    # Pass target_path to the scan method. 
+    # Logic in scanner.py should handle subfolders and files.
+    items = scanner.scan(target_path=target_path, recursive=False)
+    
+    # Update cache so we can find filePaths later during processing
+    for item in items:
+        if not item.get('is_directory'):
+            active_files_cache[item['id']] = item
         
     return {
+        "status": "success",
         "currentPath": target_path, 
-        "files": files
+        "files": items
     }
 
 @app.post("/api/process")
@@ -120,18 +131,21 @@ async def start_processing(request: ProcessRequest, background_tasks: Background
     background_tasks.add_task(run_pipeline, request.fileIds, request)
     return {"status": "started", "count": len(request.fileIds)}
 
-# Add this to stop the 404 errors in your logs for WebSockets
 @app.websocket("/ws/status")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     try:
         while True:
-            # For now, just keep the connection alive so the frontend doesn't error
-            await websocket.receive_text() 
+            # Keep-alive loop
+            data = await websocket.receive_text()
     except WebSocketDisconnect:
         print("WebSocket disconnected")
 
 @app.delete("/api/cancel/{file_id}")
 async def cancel_job(file_id: str):
-    # Implementation for cancellation logic
+    # Future implementation for cancellation logic
     return {"status": "cancelled", "id": file_id}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
