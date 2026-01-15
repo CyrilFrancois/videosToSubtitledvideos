@@ -283,3 +283,76 @@ Immutability: Once a file starts processing, its "Override" buttons should be di
 Visual Weight: Use "Dark" and "Darker" backgrounds to separate sections. Never use pure white backgrounds for an industrial tool.
 
 Contrast: Use Neon Blue for "Doing," Amber for "Waiting," and Emerald Green for "Done."
+
+What functions I want to keep :
+- Media Inventory Badges (list of Audio, list of subs, indeed an icon to say if a sub with the same name is in the same folder or in subfolder recursively)
+- Status Indicators
+- Individual Trigger
+- Source Language Picker (on the videos files but also its folder)
+- Subtitle Source Toggle (But we need to extract the state of the files before)
+- The "Sync Offset" Field (including the possibility to offset only some parts on the video files, for example when there is a blckscreen mid-video that offset only half the subtitles)
+- External srt File Dropzone
+- Segmented Progress Bar
+- Mini-Console (in the header at the top, just below the "N/N Files done")
+
+
+To look professional and "Industrial," the card should move away from the standard rounded-corner "app" look and toward a high-density instrumentation panel. We will use a grid-based horizontal layout with distinct functional zones separated by subtle vertical borders.
+
+Here is the design breakdown for the Atomic File Control card:
+
+The Layout: A Four-Zone Horizontal Slice
+The card is a low-profile rectangle with a dark matte background (#0d0d0d) and a 1px border that changes color based on status (e.g., subtle blue for idle, emerald for done).
+
+1. The ID & Selection Zone (Far Left - 5% width)
+Vertical Status Strip: A 4px wide solid color bar at the very edge (Gray = Idle, Pulsing Blue = Active, Red = Error).
+
+Checkbox: A custom squared-off checkbox for batch selection.
+
+Index Number: A tiny, dim mono-spaced number (e.g., 001) to give it a "catalog" feel.
+
+2. The Inventory & Discovery Zone (25% width)
+Primary Label: The filename in a bold, white sans-serif, truncated with an ellipsis if too long. Below it, the file size and duration in a dim gray.
+
+Inventory Badges: A row of "Micro-Chips":
+
+Audio: Small speaker icon + EN 5.1 (Blue text on dark blue background).
+
+Internal Subs: Text icon + FR, EN (Amber).
+
+External Match: A "Link" icon + .SRT—this lights up green if a matching file was found in the folder or /subs/ subfolder.
+
+Dropzone: A subtle dashed-border icon. If you drag an .srt here, it highlights the zone and displays the filename of the dropped sub.
+
+3. The Configuration Cockpit (Middle - 40% width)
+This is where the user "programs" the task.
+
+Source/Target Logic: Two compact dropdowns.
+
+SRC: [Auto-Detect ▼] (Whisper hint).
+
+TGT: [French ▼].
+
+Source Toggle: A segmented control (button group) to choose the input:
+
+[ Generate ] (Use Whisper AI).
+
+[ Translate ] (Use existing internal/external sub).
+
+Sync Offset Multi-Field: A specialized input. It shows a + button to add "Offset Zones."
+
+Default: Global: [ 0.00 ]s.
+
+Extended: 00:12:00 -> End: [ +2.5 ]s. This allows the user to handle those mid-video blackscreens you mentioned.
+
+4. The Execution & Progress Zone (Far Right - 30% width)
+The Segmented Progress Bar: Positioned at the top of this zone. Three distinct segments: Transcribe | Translate | Mux.
+
+When "Transcribe" is active, that segment pulses blue while the others stay dark gray.
+
+Telemetry Readout: Below the bar, tiny mono-spaced text shows SPEED: 2.1x | FPS: 140 | ETA: 02:45.
+
+Action Trigger: A single, square button.
+
+If Idle: A "Play" icon (Outline).
+
+If Active: A "Square" stop icon (Solid Red on hover).

@@ -13,7 +13,7 @@ export default function Sidebar({
   hasVideos = false // This must be passed from page.tsx
 }) {
   // Debug log to check the state inside the sidebar
-  console.log("SIDEBAR RENDER: hasVideos =", hasVideos, "| videos count:", hasVideos ? 'Active' : 'Empty');
+  //console.log("SIDEBAR RENDER: hasVideos =", hasVideos, "| videos count:", hasVideos ? 'Active' : 'Empty');
 
   const languages = [
     { id: 'fr', label: 'French' },
