@@ -1,167 +1,232 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { 
-  FileVideo, Play, XCircle, CheckCircle2, Folder, 
-  Volume2, Text, Link as LinkIcon, ChevronRight, Plus, 
-  Settings2, Clock, Languages, Database, Upload, Cpu
+  Folder, Volume2, Text, Link as LinkIcon, ChevronRight, 
+  Clock, Upload, Cpu, ChevronDown, Check
 } from 'lucide-react';
 
-export default function VideoCard({ video, onStart, onCancel, onNavigate, isSelected, toggleSelection }) {
+function PortalDropdown({ isOpen, anchorRef, children }) {
+  const [coords, setCoords] = useState({ top: 0, left: 0, width: 0 });
+
+  useEffect(() => {
+    if (isOpen && anchorRef.current) {
+      const rect = anchorRef.current.getBoundingClientRect();
+      setCoords({
+        top: rect.bottom + window.scrollY,
+        left: rect.left + window.scrollX,
+        width: rect.width
+      });
+    }
+  }, [isOpen, anchorRef]);
+
+  if (!isOpen) return null;
+
+  return createPortal(
+    <div 
+      className="fixed z-[9999] bg-[#1a1a1a] border border-white/10 rounded shadow-2xl py-1 max-h-48 overflow-y-auto custom-scrollbar"
+      style={{ top: coords.top + 4, left: coords.left, width: Math.max(coords.width, 160) }}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      {children}
+    </div>,
+    document.body
+  );
+}
+
+function LanguageSelector({ label, selected, options, onToggle, isSingle = false, showAuto = false }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const clickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    if (isOpen) {
+      document.addEventListener("mousedown", clickOutside);
+    }
+    return () => document.removeEventListener("mousedown", clickOutside);
+  }, [isOpen]);
+
+  const displayValue = isSingle 
+    ? (selected[0] === 'auto' ? 'Auto' : options.find(o => o.id === selected[0])?.label || 'Select')
+    : selected.map(id => id.toUpperCase()).join(', ') || 'None';
+
+  const icon = label === "SRC" ? <Volume2 size={10} className="mr-2 text-gray-600" /> : <Text size={10} className="mr-2 text-gray-600" />;
+
+  return (
+    <div className="relative" ref={containerRef}>
+      <button 
+        onClick={(e) => { e.preventDefault(); setIsOpen(!isOpen); }}
+        className={`flex items-center justify-between w-full px-2 py-1.5 bg-black border border-white/10 rounded text-[10px] font-mono hover:border-indigo-500/50 transition-colors ${isSingle ? 'text-blue-400' : 'text-indigo-400'}`}
+      >
+        <div className="flex items-center">
+          {icon}
+          <span className="text-gray-600 mr-2">{label}:</span> 
+        </div>
+        <span className="truncate flex-1 text-right mr-1">{displayValue}</span>
+        <ChevronDown size={10} className={`text-gray-600 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      <PortalDropdown isOpen={isOpen} anchorRef={containerRef}>
+        {showAuto && (
+          <div 
+            onClick={() => { onToggle('auto'); setIsOpen(false); }}
+            className="flex items-center justify-between px-3 py-2 hover:bg-indigo-500/10 cursor-pointer text-[10px] border-b border-white/5"
+          >
+            <span className={selected.includes('auto') ? 'text-blue-400' : 'text-gray-400'}>Auto Detect</span>
+            {selected.includes('auto') && <Check size={12} className="text-blue-400" />}
+          </div>
+        )}
+        {options.map(lang => (
+          <div 
+            key={lang.id}
+            onClick={() => {
+              onToggle(lang.id);
+              if (isSingle) setIsOpen(false);
+            }}
+            className="flex items-center justify-between px-3 py-2 hover:bg-white/5 cursor-pointer text-[10px]"
+          >
+            <span className={selected.includes(lang.id) ? (isSingle ? 'text-blue-400' : 'text-indigo-400') : 'text-gray-400'}>
+              {lang.label} ({lang.id.toUpperCase()})
+            </span>
+            {selected.includes(lang.id) && <Check size={12} className={isSingle ? 'text-blue-400' : 'text-indigo-400'} />}
+          </div>
+        ))}
+      </PortalDropdown>
+    </div>
+  );
+}
+
+export default function VideoCard({ video, onStart, onCancel, onNavigate }) {
   const isDir = video.is_directory;
   const [showOffsets, setShowOffsets] = useState(false);
-  
-  // Handlers
-  const handleFolderClick = (e) => {
-    e.stopPropagation();
-    if (isDir) onNavigate(video.filePath);
-  };
+  const [srcLang, setSrcLang] = useState(['auto']);
+  const [outLangs, setOutLangs] = useState(['fr']);
+  const [workflow, setWorkflow] = useState(video.has_matching_srt ? 'srt' : 'whisper');
+
+  const rawLangData = process.env.NEXT_PUBLIC_LANGUAGES || '{"English":"en", "French":"fr", "Spanish":"es", "German":"de"}';
+  const availableLanguages = Object.entries(JSON.parse(rawLangData)).map(([label, id]) => ({ id, label }));
 
   if (isDir) {
     return (
       <div 
-        onClick={handleFolderClick}
-        className="group mb-2 p-3 bg-[#0d0d0d] border border-white/5 rounded-lg flex items-center gap-4 cursor-pointer hover:bg-white/[0.02] transition-all"
+        onClick={() => onNavigate(video.filePath)}
+        className="group flex items-center gap-3 px-4 py-3 hover:bg-white/5 transition-colors cursor-pointer border-b border-white/5 my-1"
       >
-        <div className="p-2.5 rounded-xl bg-indigo-500/10 text-indigo-400">
-          <Folder size={20} fill="currentColor" className="opacity-70" />
-        </div>
-        <div className="flex-1">
-          <h3 className="text-sm font-medium text-slate-300 group-hover:text-white transition-colors">
-            {video.fileName}
-          </h3>
-          <p className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">Directory</p>
-        </div>
-        <ChevronRight size={16} className="text-gray-600 group-hover:text-indigo-400 transition-colors" />
+        <Folder size={18} className="text-indigo-400/60 group-hover:text-indigo-400" fill="currentColor" />
+        <span className="text-sm text-gray-400 group-hover:text-white transition-colors truncate">{video.fileName}</span>
+        <ChevronRight size={14} className="ml-auto text-gray-700 group-hover:text-gray-400" />
       </div>
     );
   }
 
-  // Status Accent
   const statusAccent = video.status === 'processing' ? 'border-l-indigo-500' : 
                       video.status === 'done' ? 'border-l-emerald-500' : 'border-l-transparent';
 
   return (
-    <div className={`mb-4 bg-[#0d0d0d] border border-white/5 rounded-lg overflow-hidden transition-all ${statusAccent} border-l-4`}>
+    <div className={`my-2 bg-[#0d0d0d] border border-white/5 rounded-lg transition-all ${statusAccent} border-l-4 relative`}>
       
-      {/* TOP TIER: IDENTITY */}
-      <div className="flex items-start justify-between p-4 bg-white/[0.01]">
+      {/* IDENTITY SECTION */}
+      <div className="flex items-start justify-between p-4 pb-2">
         <div className="min-w-0">
-          <div className="flex items-center gap-3 mb-1.5">
-            <h3 className="text-base font-semibold text-slate-100 truncate max-w-xl">{video.fileName}</h3>
-            <span className="px-1.5 py-0.5 rounded bg-white/5 text-gray-500 text-[10px] font-mono border border-white/10 uppercase">
-              {video.extension}
-            </span>
-          </div>
-          
-          <div className="flex gap-4">
-            <div className="flex items-center gap-1.5 text-[10px] text-blue-400/80 font-mono">
-              <Volume2 size={12} /> EN 5.1
-            </div>
-            <div className="flex items-center gap-1.5 text-[10px] text-amber-400/80 font-mono">
-              <Text size={12} /> FR (Internal)
-            </div>
-            {/* Show if file exists on disk */}
-            <div className="flex items-center gap-1.5 text-[10px] text-emerald-400/80 font-mono italic">
-              <LinkIcon size={12} /> matching .srt found
-            </div>
-          </div>
-        </div>
-
-        <div className="text-right">
-          <p className={`text-[10px] font-mono uppercase tracking-widest font-black ${video.status === 'processing' ? 'text-indigo-400 animate-pulse' : 'text-gray-600'}`}>
-            {video.status}
-          </p>
-          <p className="text-[10px] text-gray-700 font-mono mt-1">1.2 GB / 22:14</p>
-        </div>
-      </div>
-
-      {/* MIDDLE TIER: TRANSLATION & LANGUAGE COCKPIT */}
-      <div className="px-4 py-3 border-t border-white/5 flex flex-wrap items-end gap-6">
-        
-        {/* 1. Language Setup (Vertical Stack) */}
-        <div className="space-y-2">
-          <label className="text-[9px] text-gray-600 uppercase font-black tracking-tighter">Language Setup</label>
-          <div className="flex flex-col gap-1">
-            <button className="flex items-center justify-between w-32 px-2 py-1.5 bg-black border border-white/10 rounded text-[10px] text-blue-400 font-mono hover:border-indigo-500/50 transition-colors">
-              <span className="text-gray-600 mr-2">SRC:</span> EN (Audio)
-            </button>
-            <button className="flex items-center justify-between w-32 px-2 py-1.5 bg-black border border-white/10 rounded text-[10px] text-indigo-400 font-mono hover:border-indigo-500/50 transition-colors">
-              <span className="text-gray-600 mr-2">OUT:</span> FR, ES, IT
-            </button>
-          </div>
-        </div>
-
-        {/* 2. Translation Logic (Primary Mode) */}
-        <div className="space-y-2">
-          <label className="text-[9px] text-gray-600 uppercase font-black tracking-tighter">Workflow Mode</label>
-          <div className="flex items-center gap-1 bg-black p-1 rounded border border-white/10">
-            <button className="flex items-center gap-2 px-3 py-1.5 text-[10px] font-bold bg-indigo-500 text-white rounded uppercase shadow-lg">
-              <LinkIcon size={12} /> Use Detected SRT
-            </button>
-            <button className="flex items-center gap-2 px-3 py-1.5 text-[10px] font-bold text-gray-500 hover:text-gray-300 uppercase">
-              <Upload size={12} /> Custom File
-            </button>
-            <button className="flex items-center gap-2 px-3 py-1.5 text-[10px] font-bold text-gray-500 hover:text-gray-300 uppercase">
-              <Cpu size={12} /> AI Whisper
-            </button>
-          </div>
-        </div>
-
-        {/* 3. Sync Toggle */}
-        <div className="mb-1">
-          <button 
-            onClick={() => setShowOffsets(!showOffsets)}
-            className={`flex items-center gap-2 px-4 py-2 rounded border text-[10px] font-black uppercase transition-all ${
-              showOffsets ? 'bg-indigo-500/20 border-indigo-500 text-indigo-400' : 'bg-transparent border-white/10 text-gray-500 hover:border-white/20'
-            }`}
-          >
-            <Clock size={14} /> {showOffsets ? 'Close Sync' : 'Add Sync Offset'}
-          </button>
-        </div>
-
-        {/* 4. Action Launchpad */}
-        <div className="ml-auto flex items-center gap-3 pl-6 border-l border-white/5">
-           {video.status === 'processing' ? (
-              <button onClick={() => onCancel(video.id)} className="flex items-center gap-2 px-4 py-2 bg-red-500/10 text-red-500 border border-red-500/20 rounded font-black text-[10px] uppercase hover:bg-red-500 hover:text-white transition-all">
-                <XCircle size={14} /> Terminate
-              </button>
-           ) : video.status === 'done' ? (
-              <div className="flex items-center gap-2 px-4 py-2 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded font-black text-[10px] uppercase">
-                <CheckCircle2 size={14} /> Ready
-              </div>
-           ) : (
-              <button onClick={() => onStart(video.id)} className="flex items-center gap-2 px-6 py-2 bg-indigo-500 text-white rounded font-black text-[11px] uppercase shadow-[0_0_20px_rgba(99,102,241,0.3)] hover:scale-105 active:scale-95 transition-all">
-                <Play size={14} fill="currentColor" /> Start Job
-              </button>
-           )}
-        </div>
-      </div>
-
-      {/* HIDDEN OFFSET LINE (Animated Dropdown) */}
-      {showOffsets && (
-        <div className="px-4 py-3 bg-black/40 border-t border-white/5 flex items-center gap-4 animate-in fade-in slide-in-from-top-2">
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-mono text-gray-500 uppercase">Marker A:</span>
-            <input type="text" placeholder="00:00:00" className="bg-black border border-white/10 rounded px-2 py-1 text-[10px] font-mono text-indigo-400 w-24 outline-none focus:border-indigo-500" />
-            <span className="text-gray-600">→</span>
-            <input type="number" placeholder="+0.0s" className="bg-black border border-white/10 rounded px-2 py-1 text-[10px] font-mono text-indigo-400 w-16 outline-none focus:border-indigo-500" />
+            <h3 className="text-sm font-semibold text-slate-100 truncate">{video.fileName}</h3>
+            <span className="text-[9px] text-gray-600 font-mono uppercase px-1.5 py-0.5 bg-white/5 rounded">{video.extension}</span>
           </div>
-          <button className="p-1.5 hover:bg-white/10 rounded text-gray-500">
-            <Plus size={14} />
-          </button>
-          <p className="text-[9px] text-gray-600 italic ml-4">Offsets apply from the specified timestamp to end of file.</p>
         </div>
-      )}
+        <div className="text-right shrink-0">
+          <span className={`text-[9px] font-black uppercase tracking-widest ${video.status === 'processing' ? 'text-indigo-500 animate-pulse' : 'text-gray-700'}`}>
+            {video.status || 'Idle'}
+          </span>
+        </div>
+      </div>
 
-      {/* PROGRESS AREA */}
-      {video.status === 'processing' && (
-        <div className="px-4 pb-4 pt-2">
-          <div className="flex w-full h-1.5 bg-black rounded-full overflow-hidden border border-white/5">
-            <div className="h-full bg-emerald-500 w-[33%] border-r border-black/50" />
-            <div className="h-full bg-indigo-500 w-[45%] animate-pulse border-r border-black/50" />
-            <div className="h-full bg-white/5 w-[22%]" />
+      {/* COCKPIT SECTION */}
+      <div className="px-4 py-3 border-t border-white/5 grid grid-cols-12 gap-4 items-end">
+        
+        {/* Col 1: Language */}
+        <div className="col-span-3 space-y-2 self-stretch flex flex-col justify-between">
+          <label className="text-[9px] text-gray-600 uppercase font-bold tracking-tight">Language Setup</label>
+          <div className="space-y-1 bg-black/40 p-1.5 rounded border border-white/5 min-h-[85px] flex flex-col justify-center">
+            <LanguageSelector label="SRC" selected={srcLang} options={availableLanguages} onToggle={(id) => setSrcLang([id])} isSingle showAuto />
+            <LanguageSelector label="OUT" selected={outLangs} options={availableLanguages} onToggle={(id) => setOutLangs(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])} />
           </div>
+        </div>
+
+        {/* Col 2: Workflow Mode */}
+        <div className="col-span-5 space-y-2 self-stretch flex flex-col justify-between">
+          <label className="text-[9px] text-gray-600 uppercase font-bold tracking-tight">Workflow Mode</label>
+          <div className="flex flex-col gap-1 bg-black/40 p-1.5 rounded border border-white/5 min-h-[85px] justify-center">
+            <button 
+              disabled={!video.has_matching_srt}
+              onClick={() => setWorkflow('srt')}
+              className={`flex items-center gap-2 px-2 py-1 text-[9px] font-bold rounded uppercase transition-colors ${
+                workflow === 'srt' ? 'bg-indigo-500 text-white' : 'text-gray-500 hover:text-gray-300 disabled:opacity-10 disabled:grayscale'
+              }`}
+            >
+              <LinkIcon size={10} /> {video.has_matching_srt ? 'Use Matching SRT' : 'No SRT Found'}
+            </button>
+            <button 
+              onClick={() => setWorkflow('external')}
+              className={`flex items-center gap-2 px-2 py-1 text-[9px] font-bold rounded uppercase transition-colors ${
+                workflow === 'external' ? 'bg-indigo-500 text-white' : 'text-gray-500 hover:text-gray-300'
+              }`}
+            >
+              <Upload size={10} /> Import External SRT
+            </button>
+            <button 
+              onClick={() => setWorkflow('whisper')}
+              className={`flex items-center gap-2 px-2 py-1 text-[9px] font-bold rounded uppercase transition-colors ${
+                workflow === 'whisper' ? 'bg-indigo-500 text-white' : 'text-gray-500 hover:text-gray-300'
+              }`}
+            >
+              <Cpu size={10} /> AI Whisper Engine
+            </button>
+          </div>
+        </div>
+
+        {/* Col 3: Actions */}
+        <div className="col-span-4 space-y-2 self-stretch flex flex-col justify-between">
+          <label className="text-[9px] text-gray-600 uppercase font-bold tracking-tight">Actions</label>
+          <div className="flex flex-col gap-1 bg-black/40 p-1.5 rounded border border-white/5 min-h-[85px] justify-center">
+            <button 
+              onClick={() => setShowOffsets(!showOffsets)}
+              className={`flex items-center justify-center gap-2 py-1 rounded text-[9px] font-bold uppercase transition-all ${
+                showOffsets ? 'bg-indigo-500/20 border border-indigo-500/50 text-indigo-400' : 'text-gray-500 hover:text-gray-300 border border-transparent'
+              }`}
+            >
+              <Clock size={11} /> {showOffsets ? 'Hide Sync' : 'Add Sync Offset'}
+            </button>
+
+            {video.status === 'processing' ? (
+              <button onClick={() => onCancel(video.id)} className="w-full py-1.5 bg-red-500/20 text-red-500 rounded font-bold text-[9px] uppercase hover:bg-red-500 hover:text-white transition-colors border border-red-500/30">
+                Terminate Process
+              </button>
+            ) : (
+              <button onClick={() => onStart(video.id)} className="w-full py-1.5 bg-indigo-600 text-white rounded font-bold text-[9px] uppercase shadow-lg hover:bg-indigo-500 active:scale-95 transition-all">
+                Execute Job
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* SYNC PANEL */}
+      {showOffsets && (
+        <div className="px-4 py-3 bg-indigo-500/5 border-t border-white/5 flex items-center gap-3 animate-in slide-in-from-top-1">
+           <div className="flex items-center gap-1.5">
+             <span className="text-[8px] text-gray-600 font-bold uppercase">Time:</span>
+             <input type="text" placeholder="00:00:00" className="bg-black border border-white/10 rounded px-2 py-1 text-[10px] font-mono text-indigo-400 w-20 outline-none focus:border-indigo-500" />
+           </div>
+           <div className="flex items-center gap-1.5">
+             <span className="text-[8px] text-gray-600 font-bold uppercase">Offset:</span>
+             <input type="number" placeholder="+0.0s" className="bg-black border border-white/10 rounded px-2 py-1 text-[10px] font-mono text-indigo-400 w-16 outline-none focus:border-indigo-500" />
+           </div>
+           <p className="text-[8px] text-gray-500 italic ml-auto text-right">Timing corrections apply to final export</p>
         </div>
       )}
     </div>
