@@ -13,7 +13,8 @@ export default function DashboardPage() {
   const [isScanning, setIsScanning] = useState(false);
   const [currentPath, setCurrentPath] = useState<string>("/data");
   const [globalSettings, setGlobalSettings] = useState({
-    targetLanguage: 'fr',
+    targetLanguages: ['fr'], // Array now
+    modelSize: 'base',
     shouldMux: true,
     shouldRemoveOriginal: false
   });

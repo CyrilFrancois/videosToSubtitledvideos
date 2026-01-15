@@ -1,7 +1,7 @@
 import './globals.css';
-import { Inter } from 'next/font/google';
+// import { Inter } from 'next/font/google'; // Comment this out
 
-const inter = Inter({ subsets: ['latin'] });
+// const inter = Inter({ subsets: ['latin'] }); // Comment this out
 
 export const metadata = {
   title: 'AI Media Suite',
@@ -15,7 +15,8 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="dark">
-      <body className={`${inter.className} bg-black text-white antialiased`}>
+      {/* Remove inter.className from the body */}
+      <body className="bg-black text-white antialiased">
         {children}
       </body>
     </html>
