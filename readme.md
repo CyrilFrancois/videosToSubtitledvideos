@@ -61,6 +61,7 @@ videosToSubtitledvideos/
     │   ├── components/
     │   │   ├── dashboard/
     │   │   │   ├── GlobalProgress.tsx
+    │   │   │   ├── SubImportModal.tsx
     │   │   │   ├── VideoCard.tsx
     │   │   │   └── VideoList.tsx
     │   │   └── layout/
