@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import VideoCard from './VideoCard';
-import { Ghost, ChevronRight, ChevronDown } from 'lucide-react';
+import { Ghost, ChevronRight, ChevronDown, Folder } from 'lucide-react';
 
 interface VideoListProps {
   videos: any[];
@@ -24,8 +24,7 @@ export default function VideoList({
   
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
 
-  const toggleExpand = (e: React.MouseEvent, id: string, path: string) => {
-    e.stopPropagation(); // Prevent card click events
+  const handleFolderClick = (id: string, path: string) => {
     const newExpanded = new Set(expandedFolders);
     if (newExpanded.has(id)) {
       newExpanded.delete(id);
@@ -52,44 +51,67 @@ export default function VideoList({
       <div className="max-w-5xl mx-auto space-y-2 pb-10">
         {videos.map((item) => (
           <div key={item.id} className="flex flex-col">
-            <div className="flex items-center group bg-white/[0.02] hover:bg-white/[0.04] rounded-2xl transition-colors pr-2">
-              
-              {/* 1. SELECTION CHECKBOX */}
-              <div className="pl-4 pr-2">
-                <input 
-                  type="checkbox" 
-                  className="w-5 h-5 rounded border-white/10 bg-white/10 checked:bg-indigo-500 cursor-pointer accent-indigo-500"
-                  checked={selectedIds.has(item.id)}
-                  onChange={() => toggleSelection(item.id, item.is_directory, item.children)}
-                />
-              </div>
+            
+            {/* FOLDER ROW */}
+            {item.is_directory ? (
+              <div 
+                onClick={() => handleFolderClick(item.id, item.filePath)}
+                className="group flex items-center bg-white/[0.03] hover:bg-indigo-500/10 rounded-xl transition-all pr-4 py-4 my-1 cursor-pointer border border-white/5 shadow-sm"
+              >
+                {/* Checkbox Wrapper - StopPropagation to prevent folder toggle */}
+                <div className="pl-5 pr-3" onClick={(e) => e.stopPropagation()}>
+                  <input 
+                    type="checkbox" 
+                    className="w-5 h-5 rounded border-white/10 bg-white/10 checked:bg-indigo-500 cursor-pointer accent-indigo-500"
+                    checked={selectedIds.has(item.id)}
+                    onChange={() => toggleSelection(item.id, item.is_directory, item.children)}
+                  />
+                </div>
 
-              {/* 2. EXPAND ICON (Folders only) */}
-              <div className="w-8 flex justify-center">
-                {item.is_directory && (
-                  <button 
-                    onClick={(e) => toggleExpand(e, item.id, item.filePath)}
-                    className="p-1 hover:bg-white/10 rounded-md text-gray-500 hover:text-indigo-400 transition-colors"
-                  >
-                    {expandedFolders.has(item.id) ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
-                  </button>
-                )}
-              </div>
+                <div className="mr-3 text-indigo-400/70 group-hover:text-indigo-400 transition-colors">
+                   {expandedFolders.has(item.id) ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+                </div>
 
-              {/* 3. VIDEO CARD CONTENT */}
-              <div className="flex-1">
-                <VideoCard 
-                  video={item} 
-                  onStart={onStartJob}
-                  onCancel={onCancelJob}
-                  onNavigate={onNavigate}
-                />
-              </div>
-            </div>
+                <Folder size={20} className="mr-3 text-indigo-400/60" fill="currentColor" />
+                
+                <span className="text-[15px] font-semibold text-gray-200 group-hover:text-white transition-colors truncate flex-1">
+                  {item.fileName}
+                </span>
 
-            {/* 4. RECURSIVE RENDER */}
+                <span className="text-[10px] font-mono text-gray-600 uppercase tracking-widest ml-4">
+                  {item.children?.length || 0} items
+                </span>
+              </div>
+            ) : (
+              /* VIDEO ROW */
+              <div className="flex items-center group bg-white/[0.02] hover:bg-white/[0.04] rounded-2xl transition-colors pr-2">
+                <div className="pl-4 pr-2">
+                  <input 
+                    type="checkbox" 
+                    className="w-5 h-5 rounded border-white/10 bg-white/10 checked:bg-indigo-500 cursor-pointer accent-indigo-500"
+                    checked={selectedIds.has(item.id)}
+                    onChange={() => toggleSelection(item.id, item.is_directory, item.children)}
+                  />
+                </div>
+
+                <div className="w-8 flex justify-center invisible">
+                  <ChevronRight size={18} />
+                </div>
+
+                <div className="flex-1">
+                  <VideoCard 
+                    video={item} 
+                    onStart={onStartJob}
+                    onCancel={onCancelJob}
+                    onNavigate={onNavigate}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* RECURSIVE RENDER (Indented) */}
             {item.is_directory && expandedFolders.has(item.id) && item.children && (
-               <div className="ml-10 mt-2 border-l-2 border-white/5 pl-4 space-y-2">
+               <div className="ml-8 mt-1 border-l-2 border-white/5 pl-4 space-y-2">
                   <VideoList 
                     videos={item.children}
                     onStartJob={onStartJob}
