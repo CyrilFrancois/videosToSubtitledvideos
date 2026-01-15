@@ -356,3 +356,51 @@ Action Trigger: A single, square button.
 If Idle: A "Play" icon (Outline).
 
 If Active: A "Square" stop icon (Solid Red on hover).
+
+
+Updated Subtitle Detection Logic
+1. Direct Name Match (Same Folder or Subfolder)
+The Logic: The scanner identifies the base name of the video (e.g., Inception). It then searches the current directory and any immediate subdirectories (like /Subs or /Subtitles) for files named Inception.*.srt.
+
+The Objective: Perform a Strict String Match. If a match is found, the scanner marks the video as having "Sidecar" subtitles.
+
+2. Isolation Logic (The "Lone Video" Rule)
+The Logic: If a directory contains exactly one movie file, the scanner assumes any subtitle files in that folder belong to that movie, regardless of their names (e.g., Video_01.mp4 and English_Final.srt).
+
+The Objective: Directory Content Analysis. If the ratio of videos to folders is 1:1, link all loose subtitle files to that single video entity.
+
+3. Embedded Stream Analysis
+The Logic: The scanner probes the container (MKV/MP4) to see if subtitle tracks are baked into the file itself.
+
+The Objective: Stream Header Inspection. Identify tracks with a codec_type of "subtitle." This allows the user to process the file without needing any external files at all.
+
+4. Automated Language Detection (The "Language Guessing" Phase)
+The Logic: If the previous steps found a subtitle but no language metadata was attached (no .en. in the filename or no language tag in the MKV header), the system attempts to detect it automatically.
+
+The Objective: * Filename Parsing: Use Regex to look for common language codes (ISO 639-1) like _en, -fr, or (Spanish).
+
+Content Sampling (Advanced): Open the first few lines of the SRT file and run a fast Natural Language Processing (NLP) library (like langid or langdetect) to identify the language based on the text.
+
+Final Fallback: Only if the NLP confidence is too low do we label it "Unknown."
+
+Displaying Status in the VideoCard
+The primary goal for the UI is to be informative but non-intrusive. Instead of overwhelming the user with technical paths, the scanner simply feeds a status flag to the VideoCard.
+
+UI Status Label: If any of the 4 methods succeed, the VideoCard displays a clear "Subtitles Detected" badge or icon.
+
+Selector Pre-fill: * If the language was detected (via tags or AI sampling), the SRC dropdown is automatically set to that language.
+
+If the language is "Unknown," the SRC dropdown defaults to "Auto-Detect," but the user still sees that a file was found and is ready to use.
+
+Final Objectives for the Scanner API
+To make this work, the scanner must return a subtitle_report for every video:
+
+exists: Boolean.
+
+source: "Embedded", "External (Match)", or "External (Assigned)".
+
+detected_lang: The result of the Filename/NLP detection (e.g., "fr" or "und").
+
+count: Number of tracks/files found.
+
+Would you like to see how the backend Python/Node script would look to handle that "Content Sampling" step for automatic language detection?
