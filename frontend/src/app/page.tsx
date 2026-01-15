@@ -1,11 +1,11 @@
 "use client";
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import Sidebar from '@/components/layout/Sidebar';
 import GlobalProgress from '@/components/dashboard/GlobalProgress';
 import VideoList from '@/components/dashboard/VideoList';
 import { api } from '@/lib/api';
-import { Folder, ChevronLeft } from 'lucide-react';
+import { Folder } from 'lucide-react';
 
 export default function DashboardPage() {
   const [items, setItems] = useState<any[]>([]); 
@@ -13,7 +13,6 @@ export default function DashboardPage() {
   const [currentPath, setCurrentPath] = useState("/data");
   const [mounted, setMounted] = useState(false);
   
-  // SELECTION STATE
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const [globalSettings, setGlobalSettings] = useState({
@@ -23,59 +22,55 @@ export default function DashboardPage() {
     shouldRemoveOriginal: false
   });
 
+  // Initial Deep Scan: Load everything recursively
   useEffect(() => {
     setMounted(true);
-    handleExpandFolder("/data"); // Root load
+    handleInitialDeepScan();
   }, []);
 
-  /**
-   * Helper to update a specific folder within the nested tree
-   */
-  const updateTreeItems = (list: any[], path: string, children: any[]): any[] => {
-    return list.map(item => {
-      if (item.is_directory && item.filePath === path) {
-        return { ...item, children };
-      }
-      if (item.is_directory && item.children) {
-        return { ...item, children: updateTreeItems(item.children, path, children) };
-      }
-      return item;
-    });
-  };
-
-  /**
-   * Loads folder contents and injects them into the tree
-   */
-  const handleExpandFolder = useCallback(async (targetPath: string) => {
+  const handleInitialDeepScan = useCallback(async () => {
     setIsScanning(true);
     try {
-      const data = await api.scanFolder(targetPath); 
+      // Logic assumes your backend API supports a recursive flag or deep scan
+      const data = await api.scanFolder("/data", { recursive: true }); 
       if (data && data.files) {
-        const processedItems = data.files.map((item: any) => ({
-          ...item,
-          id: item.id,
-          status: item.is_directory ? 'folder' : 'idle',
-          progress: 0,
-          children: item.is_directory ? [] : null
-        }));
+        const processDeepItems = (files: any[]): any[] => {
+          return files.map(item => ({
+            ...item,
+            id: item.filePath,
+            status: item.is_directory ? 'folder' : 'idle',
+            progress: 0,
+            children: item.is_directory ? processDeepItems(item.children || []) : null
+          }));
+        };
 
-        if (targetPath === "/data") {
-          setItems(processedItems);
-        } else {
-          setItems(prev => updateTreeItems(prev, targetPath, processedItems));
-        }
-        setCurrentPath(targetPath);
+        const processed = processDeepItems(data.files);
+        setItems(processed);
       }
     } catch (e) {
-      console.error("❌ Expansion Error:", e);
+      console.error("❌ Deep Scan Error:", e);
     } finally {
       setIsScanning(false);
     }
   }, []);
 
-  /**
-   * Recursive logic to toggle selection of an item and all its descendants
-   */
+  const getSelectedFilesList = useCallback(() => {
+    const selectedFiles: any[] = [];
+    const traverse = (list: any[]) => {
+      list.forEach(item => {
+        if (!item.is_directory && selectedIds.has(item.id)) {
+          selectedFiles.push({ ...item, options: { ...globalSettings } });
+        }
+        if (item.children) traverse(item.children);
+      });
+    };
+    traverse(items);
+    return selectedFiles;
+  }, [items, selectedIds, globalSettings]);
+
+  const selectedFiles = useMemo(() => getSelectedFilesList(), [getSelectedFilesList]);
+  const selectedFilesCount = selectedFiles.length;
+
   const toggleSelection = useCallback((id: string, isDirectory: boolean, children?: any[]) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
@@ -85,7 +80,6 @@ export default function DashboardPage() {
         if (isAdding) next.add(targetId);
         else next.delete(targetId);
 
-        // Cascade to children
         if (itemChildren && itemChildren.length > 0) {
           itemChildren.forEach(child => applyToggle(child.id, child.children));
         }
@@ -97,14 +91,8 @@ export default function DashboardPage() {
   }, []);
 
   const handleProcessSelected = async () => {
-    // Only process files (not folders) that are selected
-    const fileIds = Array.from(selectedIds).filter(id => {
-        // Simple check: we need to find the item in our tree to see if it's a file
-        // For brevity, assuming your ID naming convention or a lookup helper
-        return true; 
-    });
-    console.log("Processing IDs:", fileIds);
-    // await api.processFiles(fileIds, globalSettings);
+    if (selectedFilesCount === 0) return alert("Please select at least one video file.");
+    console.log("🚀 [BATCH START]:", selectedFiles);
   };
 
   if (!mounted) return <div className="bg-[#0a0a0a] h-screen w-full" />;
@@ -113,32 +101,47 @@ export default function DashboardPage() {
     <div className="flex h-screen w-full bg-[#0a0a0a] text-slate-200">
       <Sidebar 
         currentPath={currentPath}
-        onScanFolder={() => handleExpandFolder("/data")}
+        onScanFolder={handleInitialDeepScan}
         isScanning={isScanning}
         globalSettings={globalSettings}
         setGlobalSettings={setGlobalSettings}
         onProcessAll={handleProcessSelected}
-        hasVideos={selectedIds.size > 0} 
+        hasVideos={selectedFilesCount > 0} 
+        selectedCount={selectedFilesCount} 
       />
 
       <main className="flex-1 relative overflow-hidden flex flex-col">
-        {/* Progress only for selected/active items */}
-        <GlobalProgress videos={items.filter(i => selectedIds.has(i.id))} />
+        {/* GlobalProgress now handles the N/N files done count correctly */}
+        <GlobalProgress videos={selectedFiles} />
         
         <div className="flex-1 overflow-auto p-6">
-          <header className="mb-6">
-            <h2 className="text-sm font-bold text-gray-500 uppercase tracking-widest">Library</h2>
-            <p className="text-indigo-300 font-mono text-xs">{selectedIds.size} items selected</p>
+          <header className="mb-6 border-b border-white/5 pb-4">
+            <div className="flex justify-between items-end">
+                <div>
+                  <h2 className="text-sm font-bold text-gray-500 uppercase tracking-widest">Selected Library</h2>
+                  <p className="text-indigo-300 font-mono text-xs mt-1">
+                    {selectedFilesCount} video {selectedFilesCount === 1 ? 'file' : 'files'} to process
+                  </p>
+                </div>
+                <p className="text-[10px] text-gray-600 font-mono italic">{currentPath}</p>
+            </div>
           </header>
 
-          <VideoList 
-            videos={items} 
-            onNavigate={handleExpandFolder} 
-            onStartJob={(id) => console.log("Start:", id)} 
-            onCancelJob={(id) => console.log("Cancel:", id)}
-            selectedIds={selectedIds}
-            toggleSelection={toggleSelection}
-          />
+          {items.length === 0 && !isScanning ? (
+            <div className="h-64 flex flex-col items-center justify-center opacity-30 border-2 border-dashed border-white/10 rounded-2xl">
+              <Folder size={48} className="mb-4" />
+              <p className="text-xl font-medium">No items found</p>
+            </div>
+          ) : (
+            <VideoList 
+              videos={items} 
+              onNavigate={setCurrentPath} // Path is only used for breadcrumbs now as data is pre-loaded
+              onStartJob={(id) => console.log("Single Start:", id)} 
+              onCancelJob={(id) => console.log("Cancel:", id)}
+              selectedIds={selectedIds}
+              toggleSelection={toggleSelection}
+            />
+          )}
         </div>
       </main>
     </div>

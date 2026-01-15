@@ -99,7 +99,8 @@ async def run_pipeline(file_ids: List[str], settings: ProcessRequest):
 @app.post("/api/scan")
 async def scan_library(target_path: str = Query("/data")):
     """
-    Scans the provided directory for videos and subfolders.
+    Scans the provided directory recursively to build a full tree structure.
+    This allows the frontend to manage nested selections even if folders are collapsed.
     """
     # Security: Ensure we stay within the /data volume
     if not target_path.startswith("/data"):
@@ -108,17 +109,27 @@ async def scan_library(target_path: str = Query("/data")):
     if not os.path.exists(target_path):
         raise HTTPException(status_code=404, detail=f"Path {target_path} not found")
 
-    # Initialize scanner with the base path
+    # Initialize scanner
     scanner = VideoScanner(base_path="/data")
     
-    # Pass target_path to the scan method. 
-    # Logic in scanner.py should handle subfolders and files.
-    items = scanner.scan(target_path=target_path, recursive=False)
+    # 1. CHANGE: Set recursive=True to get the full nested tree
+    # This requires your VideoScanner.scan method to support recursion.
+    items = scanner.scan(target_path=target_path, recursive=True)
     
-    # Update cache so we can find filePaths later during processing
-    for item in items:
-        if not item.get('is_directory'):
-            active_files_cache[item['id']] = item
+    # 2. UPDATE CACHE RECURSIVELY
+    # Since items is now a tree, we need a helper to find all files for the cache
+    def update_cache_recursive(nodes):
+        for node in nodes:
+            if not node.get('is_directory'):
+                # Store by ID (which is the filePath in your current setup)
+                active_files_cache[node['id']] = node
+            elif node.get('children'):
+                update_cache_recursive(node['children'])
+
+    update_cache_recursive(items)
+    
+    # Debug log to see how many files are "known" to the backend
+    print(f"📊 Scan complete. Cache now contains {len(active_files_cache)} processable files.")
         
     return {
         "status": "success",

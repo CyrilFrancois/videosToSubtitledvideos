@@ -9,7 +9,6 @@ interface VideoListProps {
   onStartJob: (id: string) => void;
   onCancelJob: (id: string) => void;
   onNavigate: (path: string) => void;
-  // New props for selection
   selectedIds: Set<string>;
   toggleSelection: (id: string, isDirectory: boolean, children?: any[]) => void;
 }
@@ -23,16 +22,15 @@ export default function VideoList({
   toggleSelection
 }: VideoListProps) {
   
-  // State to track which folders are expanded
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
 
-  const toggleExpand = (id: string, path: string) => {
+  const toggleExpand = (e: React.MouseEvent, id: string, path: string) => {
+    e.stopPropagation(); // Prevent card click events
     const newExpanded = new Set(expandedFolders);
     if (newExpanded.has(id)) {
       newExpanded.delete(id);
     } else {
       newExpanded.add(id);
-      // Optional: Trigger a fetch for this specific folder if not already loaded
       onNavigate(path); 
     }
     setExpandedFolders(newExpanded);
@@ -50,32 +48,35 @@ export default function VideoList({
   }
 
   return (
-    <section className="flex-1 overflow-y-auto custom-scrollbar px-4">
-      <div className="max-w-5xl mx-auto space-y-2 pb-20">
+    <section className="flex-1 overflow-y-auto custom-scrollbar">
+      <div className="max-w-5xl mx-auto space-y-2 pb-10">
         {videos.map((item) => (
           <div key={item.id} className="flex flex-col">
-            <div className="flex items-center group">
-              {/* Checkbox for selection */}
-              <div className="pr-4">
+            <div className="flex items-center group bg-white/[0.02] hover:bg-white/[0.04] rounded-2xl transition-colors pr-2">
+              
+              {/* 1. SELECTION CHECKBOX */}
+              <div className="pl-4 pr-2">
                 <input 
                   type="checkbox" 
-                  className="w-5 h-5 rounded border-white/10 bg-white/5 checked:bg-indigo-500 cursor-pointer"
+                  className="w-5 h-5 rounded border-white/10 bg-white/10 checked:bg-indigo-500 cursor-pointer accent-indigo-500"
                   checked={selectedIds.has(item.id)}
                   onChange={() => toggleSelection(item.id, item.is_directory, item.children)}
                 />
               </div>
 
-              {/* Toggle Arrow for Folders */}
-              {item.is_directory && (
-                <button 
-                  onClick={() => toggleExpand(item.id, item.filePath)}
-                  className="p-1 mr-1 hover:bg-white/10 rounded text-gray-400"
-                >
-                  {expandedFolders.has(item.id) ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
-                </button>
-              )}
+              {/* 2. EXPAND ICON (Folders only) */}
+              <div className="w-8 flex justify-center">
+                {item.is_directory && (
+                  <button 
+                    onClick={(e) => toggleExpand(e, item.id, item.filePath)}
+                    className="p-1 hover:bg-white/10 rounded-md text-gray-500 hover:text-indigo-400 transition-colors"
+                  >
+                    {expandedFolders.has(item.id) ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                  </button>
+                )}
+              </div>
 
-              {/* The actual Card */}
+              {/* 3. VIDEO CARD CONTENT */}
               <div className="flex-1">
                 <VideoCard 
                   video={item} 
@@ -86,9 +87,9 @@ export default function VideoList({
               </div>
             </div>
 
-            {/* Recursive children display (if folder is expanded) */}
+            {/* 4. RECURSIVE RENDER */}
             {item.is_directory && expandedFolders.has(item.id) && item.children && (
-               <div className="ml-12 mt-2 border-l border-white/5 pl-4 space-y-2">
+               <div className="ml-10 mt-2 border-l-2 border-white/5 pl-4 space-y-2">
                   <VideoList 
                     videos={item.children}
                     onStartJob={onStartJob}
