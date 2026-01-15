@@ -31,7 +31,6 @@ export default function DashboardPage() {
   const handleInitialDeepScan = useCallback(async () => {
     setIsScanning(true);
     try {
-      // Logic assumes your backend API supports a recursive flag or deep scan
       const data = await api.scanFolder("/data", { recursive: true }); 
       if (data && data.files) {
         const processDeepItems = (files: any[]): any[] => {
@@ -111,31 +110,20 @@ export default function DashboardPage() {
       />
 
       <main className="flex-1 relative overflow-hidden flex flex-col">
-        {/* GlobalProgress now handles the N/N files done count correctly */}
+        {/* Progress tracks the batch state */}
         <GlobalProgress videos={selectedFiles} />
         
+        {/* Main content area - Header removed for cleaner UI */}
         <div className="flex-1 overflow-auto p-6">
-          <header className="mb-6 border-b border-white/5 pb-4">
-            <div className="flex justify-between items-end">
-                <div>
-                  <h2 className="text-sm font-bold text-gray-500 uppercase tracking-widest">Selected Library</h2>
-                  <p className="text-indigo-300 font-mono text-xs mt-1">
-                    {selectedFilesCount} video {selectedFilesCount === 1 ? 'file' : 'files'} to process
-                  </p>
-                </div>
-                <p className="text-[10px] text-gray-600 font-mono italic">{currentPath}</p>
-            </div>
-          </header>
-
           {items.length === 0 && !isScanning ? (
-            <div className="h-64 flex flex-col items-center justify-center opacity-30 border-2 border-dashed border-white/10 rounded-2xl">
-              <Folder size={48} className="mb-4" />
-              <p className="text-xl font-medium">No items found</p>
+            <div className="h-full flex flex-col items-center justify-center opacity-20 border-2 border-dashed border-white/5 rounded-3xl">
+              <Folder size={64} strokeWidth={1} className="mb-4" />
+              <p className="text-lg font-medium tracking-tight">Library is empty or path not found</p>
             </div>
           ) : (
             <VideoList 
               videos={items} 
-              onNavigate={setCurrentPath} // Path is only used for breadcrumbs now as data is pre-loaded
+              onNavigate={setCurrentPath} 
               onStartJob={(id) => console.log("Single Start:", id)} 
               onCancelJob={(id) => console.log("Cancel:", id)}
               selectedIds={selectedIds}
