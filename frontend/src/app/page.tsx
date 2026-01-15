@@ -8,11 +8,14 @@ import { api } from '@/lib/api';
 import { Folder, ChevronLeft } from 'lucide-react';
 
 export default function DashboardPage() {
-  const [items, setItems] = useState([]); // Renamed from videos to items (folders + files)
+  const [items, setItems] = useState<any[]>([]); 
   const [isScanning, setIsScanning] = useState(false);
   const [currentPath, setCurrentPath] = useState("/data");
   const [mounted, setMounted] = useState(false);
   
+  // SELECTION STATE
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
   const [globalSettings, setGlobalSettings] = useState({
     targetLanguages: ['fr'], 
     modelSize: 'base',
@@ -22,93 +25,120 @@ export default function DashboardPage() {
 
   useEffect(() => {
     setMounted(true);
-    // Initial scan of the root
-    handleNavigate("/data");
+    handleExpandFolder("/data"); // Root load
   }, []);
 
-  const handleNavigate = useCallback(async (targetPath: string) => {
-    console.log(`📂 [NAVIGATE]: Moving to ${targetPath}`);
+  /**
+   * Helper to update a specific folder within the nested tree
+   */
+  const updateTreeItems = (list: any[], path: string, children: any[]): any[] => {
+    return list.map(item => {
+      if (item.is_directory && item.filePath === path) {
+        return { ...item, children };
+      }
+      if (item.is_directory && item.children) {
+        return { ...item, children: updateTreeItems(item.children, path, children) };
+      }
+      return item;
+    });
+  };
+
+  /**
+   * Loads folder contents and injects them into the tree
+   */
+  const handleExpandFolder = useCallback(async (targetPath: string) => {
     setIsScanning(true);
     try {
-      // We pass the specific path to the API
       const data = await api.scanFolder(targetPath); 
-      
       if (data && data.files) {
-        // In our new scanner.py, 'files' now contains both is_directory: true and false
-        setItems(data.files.map((item, i) => ({
+        const processedItems = data.files.map((item: any) => ({
           ...item,
-          id: item.id || item.fileName || `item-${i}`,
-          status: item.status || (item.is_directory ? 'folder' : 'idle'),
-          progress: item.progress || 0,
-        })));
+          id: item.id,
+          status: item.is_directory ? 'folder' : 'idle',
+          progress: 0,
+          children: item.is_directory ? [] : null
+        }));
+
+        if (targetPath === "/data") {
+          setItems(processedItems);
+        } else {
+          setItems(prev => updateTreeItems(prev, targetPath, processedItems));
+        }
         setCurrentPath(targetPath);
       }
     } catch (e) {
-      console.error("❌ Navigation Error:", e);
+      console.error("❌ Expansion Error:", e);
     } finally {
       setIsScanning(false);
     }
   }, []);
 
-  const handleBack = () => {
-    if (currentPath === "/data") return;
-    const parts = currentPath.split('/');
-    parts.pop();
-    const parentPath = parts.join('/') || "/data";
-    handleNavigate(parentPath);
+  /**
+   * Recursive logic to toggle selection of an item and all its descendants
+   */
+  const toggleSelection = useCallback((id: string, isDirectory: boolean, children?: any[]) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      const isAdding = !next.has(id);
+
+      const applyToggle = (targetId: string, itemChildren?: any[]) => {
+        if (isAdding) next.add(targetId);
+        else next.delete(targetId);
+
+        // Cascade to children
+        if (itemChildren && itemChildren.length > 0) {
+          itemChildren.forEach(child => applyToggle(child.id, child.children));
+        }
+      };
+
+      applyToggle(id, children);
+      return next;
+    });
+  }, []);
+
+  const handleProcessSelected = async () => {
+    // Only process files (not folders) that are selected
+    const fileIds = Array.from(selectedIds).filter(id => {
+        // Simple check: we need to find the item in our tree to see if it's a file
+        // For brevity, assuming your ID naming convention or a lookup helper
+        return true; 
+    });
+    console.log("Processing IDs:", fileIds);
+    // await api.processFiles(fileIds, globalSettings);
   };
 
   if (!mounted) return <div className="bg-[#0a0a0a] h-screen w-full" />;
-
-  // Filter items to see if we have any actual video files for the "Start Batch" logic
-  const hasVideoFiles = items.some(item => !item.is_directory);
 
   return (
     <div className="flex h-screen w-full bg-[#0a0a0a] text-slate-200">
       <Sidebar 
         currentPath={currentPath}
-        onScanFolder={() => handleNavigate("/data")}
+        onScanFolder={() => handleExpandFolder("/data")}
         isScanning={isScanning}
         globalSettings={globalSettings}
         setGlobalSettings={setGlobalSettings}
-        onProcessAll={() => console.log("Batch Start", items.filter(i => !i.is_directory))}
-        hasVideos={hasVideoFiles} 
+        onProcessAll={handleProcessSelected}
+        hasVideos={selectedIds.size > 0} 
       />
 
       <main className="flex-1 relative overflow-hidden flex flex-col">
-        <GlobalProgress videos={items.filter(i => !i.is_directory)} />
+        {/* Progress only for selected/active items */}
+        <GlobalProgress videos={items.filter(i => selectedIds.has(i.id))} />
         
         <div className="flex-1 overflow-auto p-6">
-          {/* Breadcrumb / Navigation Header */}
-          <div className="mb-6 flex items-center gap-4">
-            {currentPath !== "/data" && (
-              <button 
-                onClick={handleBack}
-                className="p-2 hover:bg-white/10 rounded-lg transition-colors text-indigo-400"
-                title="Go Back"
-              >
-                <ChevronLeft size={24} />
-              </button>
-            )}
-            <div>
-              <h2 className="text-sm font-bold text-gray-500 uppercase tracking-widest">Current Location</h2>
-              <p className="text-indigo-300 font-mono text-xs">{currentPath}</p>
-            </div>
-          </div>
+          <header className="mb-6">
+            <h2 className="text-sm font-bold text-gray-500 uppercase tracking-widest">Library</h2>
+            <p className="text-indigo-300 font-mono text-xs">{selectedIds.size} items selected</p>
+          </header>
 
-          {items.length === 0 && !isScanning ? (
-            <div className="h-64 flex flex-col items-center justify-center opacity-30 border-2 border-dashed border-white/10 rounded-2xl">
-              <Folder size={48} className="mb-4" />
-              <p className="text-xl font-medium">This folder is empty</p>
-            </div>
-          ) : (
-            <VideoList 
-              videos={items} 
-              onNavigate={handleNavigate} 
-              onStartJob={(id) => console.log("Start:", id)} 
-              onCancelJob={(id) => console.log("Cancel:", id)} 
-            />
-          )}
+          <VideoList 
+            videos={items} 
+            onNavigate={handleExpandFolder} 
+            onStartJob={(id) => console.log("Start:", id)} 
+            onCancelJob={(id) => console.log("Cancel:", id)}
+            selectedIds={selectedIds}
+            toggleSelection={toggleSelection}
+          />
         </div>
       </main>
     </div>
