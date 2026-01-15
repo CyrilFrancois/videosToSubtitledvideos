@@ -90,7 +90,7 @@ videosToSubtitledvideos/
 Create a `.env` file in the root directory:
 ```env
 OPENAI_API_KEY=your_key_here
-MEDIA_PATH=./data
+NEXT_PUBLIC_MEDIA_PATH=./data
 WHISPER_MODEL=base  # tiny, base, small, medium, large
 ```
 

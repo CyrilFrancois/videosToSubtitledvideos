@@ -7,7 +7,7 @@ services:
     volumes:
       - ./backend:/app
       # This maps your local MEDIA_PATH (C:/Videos) to /data inside the container
-      - ${MEDIA_PATH}:/data
+      - ${NEXT_PUBLIC_MEDIA_PATH}:/data
       - whisper_model_cache:/root/.cache/whisper
     env_file:
       - .env
@@ -26,6 +26,8 @@ services:
       # Prevent local node_modules from overwriting the container's installed modules
       - /app/node_modules
       - /app/.next
+    env_file:
+      - .env
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
     depends_on:
