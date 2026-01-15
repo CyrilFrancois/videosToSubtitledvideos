@@ -5,11 +5,14 @@ import Sidebar from '@/components/layout/Sidebar';
 import GlobalProgress from '@/components/dashboard/GlobalProgress';
 import VideoList from '@/components/dashboard/VideoList';
 import { api } from '@/lib/api';
+import { Folder } from 'lucide-react';
 
 export default function DashboardPage() {
   const [videos, setVideos] = useState([]);
   const [isScanning, setIsScanning] = useState(false);
   const [currentPath, setCurrentPath] = useState("/data");
+  const [mounted, setMounted] = useState(false); // NEW: Hydration fix
+  
   const [globalSettings, setGlobalSettings] = useState({
     targetLanguages: ['fr'], 
     modelSize: 'base',
@@ -17,32 +20,35 @@ export default function DashboardPage() {
     shouldRemoveOriginal: false
   });
 
+  // Handle Hydration
   useEffect(() => {
-    document.title = "LEXI-STREAM AI";
-    console.log("DASHBOARD LOADED: State initialized.");
+    setMounted(true);
+    console.log("🖥️ [BROWSER]: Client-side hydration complete.");
   }, []);
 
   const handleScan = useCallback(async () => {
-    console.log("HANDLER: handleScan triggered. Path:", currentPath);
+    console.log("🖱️ [LOG]: Scan function called from Page.tsx");
     setIsScanning(true);
     try {
       const data = await api.scanFolder(currentPath || "/data", true);
-      console.log("HANDLER: API Success:", data);
-      if (data && data.files) {
-        setVideos(data.files.map(v => ({
+      if (data?.files) {
+        setVideos(data.files.map((v, i) => ({
           ...v,
-          filename: v.fileName || v.filename,
+          id: v.id || v.filename || `v-${i}`,
           status: v.status || 'idle',
           progress: v.progress || 0,
         })));
-        setCurrentPath(data.currentPath);
+        if (data.currentPath) setCurrentPath(data.currentPath);
       }
-    } catch (error) {
-      console.error("HANDLER: API Error:", error);
+    } catch (e) {
+      console.error("❌ Scan Error:", e);
     } finally {
       setIsScanning(false);
     }
   }, [currentPath]);
+
+  // Don't render interactive elements until mounted on client
+  if (!mounted) return <div className="bg-[#0a0a0a] h-screen w-full" />;
 
   return (
     <div className="flex h-screen w-full bg-[#0a0a0a] text-slate-200">
@@ -52,16 +58,20 @@ export default function DashboardPage() {
         isScanning={isScanning}
         globalSettings={globalSettings}
         setGlobalSettings={setGlobalSettings}
-        onProcessAll={() => console.log("Process All Clicked")}
+        onProcessAll={() => console.log("Batch Start")}
+        hasVideos={videos.length > 0} 
       />
+
       <main className="flex-1 relative overflow-hidden flex flex-col">
         <GlobalProgress videos={videos} />
         <div className="flex-1 overflow-auto p-6">
-          <VideoList 
-            videos={videos} 
-            onStartJob={(id) => console.log("Start single:", id)}
-            onCancelJob={(id) => console.log("Cancel single:", id)}
-          />
+          {videos.length === 0 && !isScanning && (
+            <div className="h-full flex flex-col items-center justify-center opacity-30">
+              <Folder size={48} className="mb-4" />
+              <p className="text-xl font-medium">No videos loaded</p>
+            </div>
+          )}
+          <VideoList videos={videos} onStartJob={() => {}} onCancelJob={() => {}} />
         </div>
       </main>
     </div>
