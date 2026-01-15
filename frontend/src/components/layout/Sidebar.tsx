@@ -143,7 +143,10 @@ export default function Sidebar({
                 label="SRC" 
                 selected={globalSettings?.sourceLang || ['auto']} 
                 options={availableLanguages} 
-                onToggle={(id) => setGlobalSettings({...globalSettings, sourceLang: [id]})} 
+                onToggle={(id) => setGlobalSettings({
+                  ...globalSettings, 
+                  sourceLang: [id] // Force array format to match VideoCard state
+                })} 
                 isSingle 
                 showAuto 
               />
@@ -166,14 +169,14 @@ export default function Sidebar({
             <div className="relative">
               <Zap size={12} className="absolute left-3 top-3.5 text-gray-500" />
               <select 
-                className="w-full bg-black border border-white/10 p-2.5 pl-8 rounded-lg text-xs text-gray-200 outline-none focus:border-indigo-500 appearance-none font-mono"
+                className="w-full bg-black border border-white/10 p-2.5 pl-8 rounded-lg text-xs text-gray-200 outline-none focus:border-indigo-500 appearance-none font-mono cursor-pointer"
                 value={globalSettings?.workflowMode || "hybrid"}
                 onChange={(e) => setGlobalSettings({...globalSettings, workflowMode: e.target.value})}
               >
-                <option value="hybrid">Hybrid: Use SRT or AI Fallback</option>
-                <option value="force_ai">Force AI: Generate New SRT</option>
+                <option value="hybrid">Smart: Use SRT (AI Fallback)</option>
+                <option value="force_ai">Manual: Force AI Transcription</option>
               </select>
-              <ChevronDown size={12} className="absolute right-3 top-3.5 text-gray-500 pointer-events-none" />
+              <ChevronDown size={12} className="absolute right-3 top-3.5 text-gray-600 pointer-events-none" />
             </div>
           </div>
 

@@ -7,6 +7,8 @@ import {
   Clock, Upload, Cpu, ChevronDown, Check
 } from 'lucide-react';
 
+// --- SUB-COMPONENT: PortalDropdown ---
+// Fixes the "ReferenceError" by defining the helper inside the file
 function PortalDropdown({ isOpen, anchorRef, children }) {
   const [coords, setCoords] = useState({ top: 0, left: 0, width: 0 });
 
@@ -35,6 +37,7 @@ function PortalDropdown({ isOpen, anchorRef, children }) {
   );
 }
 
+// --- SUB-COMPONENT: LanguageSelector ---
 function LanguageSelector({ label, selected, options, onToggle, isSingle = false, showAuto = false }) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -45,17 +48,13 @@ function LanguageSelector({ label, selected, options, onToggle, isSingle = false
         setIsOpen(false);
       }
     };
-    if (isOpen) {
-      document.addEventListener("mousedown", clickOutside);
-    }
+    if (isOpen) document.addEventListener("mousedown", clickOutside);
     return () => document.removeEventListener("mousedown", clickOutside);
   }, [isOpen]);
 
   const displayValue = isSingle 
     ? (selected[0] === 'auto' ? 'Auto' : options.find(o => o.id === selected[0])?.label || 'Select')
     : selected.map(id => id.toUpperCase()).join(', ') || 'None';
-
-  const icon = label === "SRC" ? <Volume2 size={10} className="mr-2 text-gray-600" /> : <Text size={10} className="mr-2 text-gray-600" />;
 
   return (
     <div className="relative" ref={containerRef}>
@@ -64,10 +63,10 @@ function LanguageSelector({ label, selected, options, onToggle, isSingle = false
         className={`flex items-center justify-between w-full px-2 py-1.5 bg-black border border-white/10 rounded text-[10px] font-mono hover:border-indigo-500/50 transition-colors ${isSingle ? 'text-blue-400' : 'text-indigo-400'}`}
       >
         <div className="flex items-center">
-          {icon}
+          {label === "SRC" ? <Volume2 size={10} className="mr-2 text-gray-600" /> : <Text size={10} className="mr-2 text-gray-600" />}
           <span className="text-gray-600 mr-2">{label}:</span> 
         </div>
-        <span className="truncate flex-1 text-right mr-1">{displayValue}</span>
+        <span className="truncate flex-1 text-right mr-1 font-bold">{displayValue}</span>
         <ChevronDown size={10} className={`text-gray-600 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
@@ -101,14 +100,37 @@ function LanguageSelector({ label, selected, options, onToggle, isSingle = false
   );
 }
 
-export default function VideoCard({ video, onStart, onCancel, onNavigate }) {
+// --- MAIN COMPONENT ---
+export default function VideoCard({ video, onStart, onCancel, onNavigate, globalSettings }) {
   const isDir = video.is_directory;
   const [showOffsets, setShowOffsets] = useState(false);
-  const [srcLang, setSrcLang] = useState(['auto']);
-  const [outLangs, setOutLangs] = useState(['fr']);
-  const [workflow, setWorkflow] = useState(video.has_matching_srt ? 'srt' : 'whisper');
+  
+  // Local states
+  const [srcLang, setSrcLang] = useState(globalSettings?.sourceLang || ['auto']);
+  const [outLangs, setOutLangs] = useState(globalSettings?.targetLanguages || ['fr']);
+  
+  const determineBestWorkflow = () => {
+    if (globalSettings?.workflowMode === 'force_ai') return 'whisper';
+    return video.has_matching_srt ? 'srt' : 'whisper';
+  };
 
-  const rawLangData = process.env.NEXT_PUBLIC_LANGUAGES || '{"English":"en", "French":"fr", "Spanish":"es", "German":"de"}';
+  const [workflow, setWorkflow] = useState(determineBestWorkflow());
+
+  // Effect to sync with Sidebar changes
+  useEffect(() => {
+    if (globalSettings) {
+      setSrcLang(globalSettings.sourceLang || ['auto']);
+      setOutLangs(globalSettings.targetLanguages || ['fr']);
+      
+      if (globalSettings.workflowMode === 'force_ai') {
+        setWorkflow('whisper');
+      } else {
+        setWorkflow(video.has_matching_srt ? 'srt' : 'whisper');
+      }
+    }
+  }, [globalSettings, video.has_matching_srt]);
+
+  const rawLangData = process.env.NEXT_PUBLIC_LANGUAGES || '{"English":"en", "French":"fr"}';
   const availableLanguages = Object.entries(JSON.parse(rawLangData)).map(([label, id]) => ({ id, label }));
 
   if (isDir) {
@@ -129,8 +151,6 @@ export default function VideoCard({ video, onStart, onCancel, onNavigate }) {
 
   return (
     <div className={`my-2 bg-[#0d0d0d] border border-white/5 rounded-lg transition-all ${statusAccent} border-l-4 relative`}>
-      
-      {/* IDENTITY SECTION */}
       <div className="flex items-start justify-between p-4 pb-2">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -145,10 +165,7 @@ export default function VideoCard({ video, onStart, onCancel, onNavigate }) {
         </div>
       </div>
 
-      {/* COCKPIT SECTION */}
       <div className="px-4 py-3 border-t border-white/5 grid grid-cols-12 gap-4 items-end">
-        
-        {/* Col 1: Language */}
         <div className="col-span-3 space-y-2 self-stretch flex flex-col justify-between">
           <label className="text-[9px] text-gray-600 uppercase font-bold tracking-tight">Language Setup</label>
           <div className="space-y-1 bg-black/40 p-1.5 rounded border border-white/5 min-h-[85px] flex flex-col justify-center">
@@ -157,7 +174,6 @@ export default function VideoCard({ video, onStart, onCancel, onNavigate }) {
           </div>
         </div>
 
-        {/* Col 2: Workflow Mode */}
         <div className="col-span-5 space-y-2 self-stretch flex flex-col justify-between">
           <label className="text-[9px] text-gray-600 uppercase font-bold tracking-tight">Workflow Mode</label>
           <div className="flex flex-col gap-1 bg-black/40 p-1.5 rounded border border-white/5 min-h-[85px] justify-center">
@@ -189,7 +205,6 @@ export default function VideoCard({ video, onStart, onCancel, onNavigate }) {
           </div>
         </div>
 
-        {/* Col 3: Actions */}
         <div className="col-span-4 space-y-2 self-stretch flex flex-col justify-between">
           <label className="text-[9px] text-gray-600 uppercase font-bold tracking-tight">Actions</label>
           <div className="flex flex-col gap-1 bg-black/40 p-1.5 rounded border border-white/5 min-h-[85px] justify-center">
@@ -215,18 +230,17 @@ export default function VideoCard({ video, onStart, onCancel, onNavigate }) {
         </div>
       </div>
 
-      {/* SYNC PANEL */}
       {showOffsets && (
         <div className="px-4 py-3 bg-indigo-500/5 border-t border-white/5 flex items-center gap-3 animate-in slide-in-from-top-1">
-           <div className="flex items-center gap-1.5">
-             <span className="text-[8px] text-gray-600 font-bold uppercase">Time:</span>
-             <input type="text" placeholder="00:00:00" className="bg-black border border-white/10 rounded px-2 py-1 text-[10px] font-mono text-indigo-400 w-20 outline-none focus:border-indigo-500" />
-           </div>
-           <div className="flex items-center gap-1.5">
-             <span className="text-[8px] text-gray-600 font-bold uppercase">Offset:</span>
-             <input type="number" placeholder="+0.0s" className="bg-black border border-white/10 rounded px-2 py-1 text-[10px] font-mono text-indigo-400 w-16 outline-none focus:border-indigo-500" />
-           </div>
-           <p className="text-[8px] text-gray-500 italic ml-auto text-right">Timing corrections apply to final export</p>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[8px] text-gray-600 font-bold uppercase">Time:</span>
+              <input type="text" placeholder="00:00:00" className="bg-black border border-white/10 rounded px-2 py-1 text-[10px] font-mono text-indigo-400 w-20 outline-none focus:border-indigo-500" />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[8px] text-gray-600 font-bold uppercase">Offset:</span>
+              <input type="number" placeholder="+0.0s" className="bg-black border border-white/10 rounded px-2 py-1 text-[10px] font-mono text-indigo-400 w-16 outline-none focus:border-indigo-500" />
+            </div>
+            <p className="text-[8px] text-gray-500 italic ml-auto text-right">Timing corrections apply to final export</p>
         </div>
       )}
     </div>

@@ -11,6 +11,7 @@ interface VideoListProps {
   onNavigate: (path: string) => void;
   selectedIds: Set<string>;
   toggleSelection: (id: string, isDirectory: boolean, children?: any[]) => void;
+  globalSettings: any; // Added this prop
 }
 
 export default function VideoList({ 
@@ -19,7 +20,8 @@ export default function VideoList({
   onCancelJob, 
   onNavigate,
   selectedIds,
-  toggleSelection
+  toggleSelection,
+  globalSettings // Added this prop
 }: VideoListProps) {
   
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
@@ -58,7 +60,6 @@ export default function VideoList({
                 onClick={() => handleFolderClick(item.id, item.filePath)}
                 className="group flex items-center bg-white/[0.03] hover:bg-indigo-500/10 rounded-xl transition-all pr-4 py-4 my-1 cursor-pointer border border-white/5 shadow-sm"
               >
-                {/* Checkbox Wrapper - StopPropagation to prevent folder toggle */}
                 <div className="pl-5 pr-3" onClick={(e) => e.stopPropagation()}>
                   <input 
                     type="checkbox" 
@@ -104,6 +105,7 @@ export default function VideoList({
                     onStart={onStartJob}
                     onCancel={onCancelJob}
                     onNavigate={onNavigate}
+                    globalSettings={globalSettings} // Passed to card
                   />
                 </div>
               </div>
@@ -119,6 +121,7 @@ export default function VideoList({
                     onNavigate={onNavigate}
                     selectedIds={selectedIds}
                     toggleSelection={toggleSelection}
+                    globalSettings={globalSettings} // Passed to sub-folder list
                   />
                </div>
             )}

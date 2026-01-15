@@ -15,14 +15,18 @@ export default function DashboardPage() {
   
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
+  // 1. Updated globalSettings with the new keys
   const [globalSettings, setGlobalSettings] = useState({
+    sourceLang: ['auto'],        // Added
     targetLanguages: ['fr'], 
+    workflowMode: 'hybrid',      // Added
     modelSize: 'base',
+    autoGenerate: true,          // Added
     shouldMux: true,
     shouldRemoveOriginal: false
   });
 
-  // Initial Deep Scan: Load everything recursively
+  // Initial Deep Scan
   useEffect(() => {
     setMounted(true);
     handleInitialDeepScan();
@@ -58,6 +62,7 @@ export default function DashboardPage() {
     const traverse = (list: any[]) => {
       list.forEach(item => {
         if (!item.is_directory && selectedIds.has(item.id)) {
+          // 3. Merging global settings into the job options
           selectedFiles.push({ ...item, options: { ...globalSettings } });
         }
         if (item.children) traverse(item.children);
@@ -91,7 +96,8 @@ export default function DashboardPage() {
 
   const handleProcessSelected = async () => {
     if (selectedFilesCount === 0) return alert("Please select at least one video file.");
-    console.log("🚀 [BATCH START]:", selectedFiles);
+    console.log("🚀 [BATCH START] Payload:", selectedFiles);
+    // Here you would typically call your backend API with selectedFiles
   };
 
   if (!mounted) return <div className="bg-[#0a0a0a] h-screen w-full" />;
@@ -110,10 +116,8 @@ export default function DashboardPage() {
       />
 
       <main className="flex-1 relative overflow-hidden flex flex-col">
-        {/* Progress tracks the batch state */}
         <GlobalProgress videos={selectedFiles} />
         
-        {/* Main content area - Header removed for cleaner UI */}
         <div className="flex-1 overflow-auto p-6">
           {items.length === 0 && !isScanning ? (
             <div className="h-full flex flex-col items-center justify-center opacity-20 border-2 border-dashed border-white/5 rounded-3xl">
@@ -128,6 +132,8 @@ export default function DashboardPage() {
               onCancelJob={(id) => console.log("Cancel:", id)}
               selectedIds={selectedIds}
               toggleSelection={toggleSelection}
+              // 2. Added globalSettings prop here
+              globalSettings={globalSettings}
             />
           )}
         </div>
