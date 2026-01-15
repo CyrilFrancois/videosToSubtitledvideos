@@ -72,6 +72,8 @@ videosToSubtitledvideos/
     ├── Dockerfile
     ├── next-env.d.ts
     ├── package.json
+    ├── postcss.config.js
+    ├── tailwind.config.ts
     └── tsconfig.json
 ```
 

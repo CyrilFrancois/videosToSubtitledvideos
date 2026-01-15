@@ -6,11 +6,15 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app
-      - ./data:/app/data
+      # This maps your local MEDIA_PATH (C:/Videos) to /data inside the container
+      - ${MEDIA_PATH}:/data
       - whisper_model_cache:/root/.cache/whisper
     env_file:
       - .env
+    # uvicorn handles the FastAPI app with hot-reload enabled for development
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - media-network
 
   frontend:
     build: ./frontend
@@ -19,12 +23,19 @@ services:
       - "3000:3000"
     volumes:
       - ./frontend:/app
+      # Prevent local node_modules from overwriting the container's installed modules
       - /app/node_modules
       - /app/.next
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
     depends_on:
       - backend
+    networks:
+      - media-network
+
+networks:
+  media-network:
+    driver: bridge
 
 volumes:
   whisper_model_cache:

@@ -193,3 +193,93 @@ Would you like me to provide the **Next.js (React + Tailwind)** code for this on
 [Video processing automation with Python and Docker](https://www.google.com/search?q=https://www.youtube.com/watch%3Fv%3DF3zWvGv-Kmc)
 This video provides a conceptual overview of how to orchestrate media processing tasks using containers, which aligns with the Dockerized backend architecture we are building.
 
+UX/UI
+
+1. The Sidebar: "Global Pipeline Configuration"
+This area is the Control Plane. It should be a fixed, high-contrast vertical bar.
+
+A. Discovery Controls
+"Scan Directory" Button: The primary trigger to start the Scanner.py logic.
+
+"Recursive" Toggle: A switch to decide if the scanner stays in the root or dives into subfolders.
+
+Path Breadcrumb: A non-editable, mono-spaced text area showing exactly which /data/ folder is currently "mounted."
+
+B. AI & Translation Strategy
+"Target Language" Selector: A dropdown (French, English, etc.) that sets the default for the GPT translator.
+
+"Provider" Toggle: Switch between OpenAI, Local LLM, or DeepL.
+
+"Transcription Model" Selector: Dropdown to choose Whisper size (tiny, base, large-v3)—crucial for balancing speed vs. accuracy.
+
+C. Output Logic
+"Mux into MKV" Switch: Toggle to decide if a new file should be created or just the .srt.
+
+"Cleanup" Toggle: A high-visibility (red) switch for "Delete original file after success."
+
+"Master Start" Button: A massive, pulsing button at the bottom: EXECUTE ALL PENDING.
+
+2. The Header: "Real-Time Telemetry"
+This is a horizontal strip at the top of the main area. It gives the user a "God View" of the system.
+
+System Status Badge: A pulsing LED icon: [IDLE], [SCANNING], or [PROCESSING].
+
+Aggregate Progress Bar: A single, thick neon bar representing the percentage of the entire folder completed.
+
+Resource Counters: Small "Chips" showing:
+
+Queue: 12
+
+Active: 2
+
+Failed: 0
+
+ETA: 14m
+
+3. The Video Card: "Atomic File Control"
+Each file in your list is an independent processing unit. Every card should contain:
+
+A. Metadata Block (Top Left)
+Filename & Extension Badge: e.g., The_Bear_S01E01.mkv [HEVC].
+
+Stream Inventory: Small icons showing detected streams:
+
+[Speaker Icon] (English 5.1 detected)
+
+[Text Icon] (Internal FR subs found)
+
+[Folder Icon] (External .srt found in /subs/)
+
+B. Per-File Overrides (Middle)
+"Override Language": A specific dropdown if this one file needs a different translation than the global setting.
+
+"Sync Offset" Input: A small numerical field to manually shift subtitle timings if the user knows they are out of sync.
+
+C. Action & Progress Block (Right Side)
+"Start/Cancel" Button: Individual control to process just this file.
+
+Multi-Stage Progress Bar: This is the "Pro" touch. Instead of one bar, use a segmented bar that fills as the file moves through:
+
+Transcribing
+
+Translating
+
+Muxing
+
+Live Log Snippet: A tiny, scrolling one-line terminal: "Whisper: 45% complete..."
+
+4. The "Drawer": "Raw Logs & Debug"
+When a user clicks on a specific Video Card, a "Drawer" or "Accordion" should slide out from under it.
+
+Terminal Output: The raw stdout from FFmpeg and the Python backend.
+
+JSON Preview: A view of the metadata gathered by ffprobe.
+
+GPT Prompt Preview: Show the exact context-aware prompt being sent to the LLM (e.g., "Context: Kitchen Drama...").
+
+Summary of Industrial UX Principles
+Immutability: Once a file starts processing, its "Override" buttons should be disabled (grayed out) to prevent mid-task errors.
+
+Visual Weight: Use "Dark" and "Darker" backgrounds to separate sections. Never use pure white backgrounds for an industrial tool.
+
+Contrast: Use Neon Blue for "Doing," Amber for "Waiting," and Emerald Green for "Done."

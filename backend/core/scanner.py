@@ -18,7 +18,7 @@ class VideoScanner:
             file_path
         ]
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
             data = json.loads(result.stdout)
             
             audio_streams = []
@@ -49,39 +49,46 @@ class VideoScanner:
 
     def find_external_subtitles(self, video_path: Path):
         """
-        Implementation of your complex discovery UX:
-        1. Same folder (sidecar)
-        2. /subs/ or /subtitles/ subfolder
-        3. /subs/video_name/ subfolder
+        Discovery Engine Logic:
+        1. Sidecar (same folder)
+        2. /subs/ or /subtitles/
+        3. Nested folders like /subs/video_name/
         """
         external_subs = []
         video_name = video_path.stem
         parent_dir = video_path.parent
 
-        # List of potential directories to check
         search_dirs = [
-            parent_dir,                                 # Same folder
-            parent_dir / "subs",                        # /subs/
-            parent_dir / "subtitles",                   # /subtitles/
-            parent_dir / "subs" / video_name,           # /subs/video_name/
-            parent_dir / "subtitles" / video_name        # /subtitles/video_name/
+            parent_dir,
+            parent_dir / "subs",
+            parent_dir / "subtitles",
+            parent_dir / "subs" / video_name,
+            parent_dir / "subtitles" / video_name
         ]
 
         for s_dir in search_dirs:
             if s_dir.exists() and s_dir.is_dir():
                 for file in s_dir.iterdir():
-                    if file.suffix == '.srt' and (video_name in file.name or s_dir.name == video_name):
+                    # Check if it's an SRT and relates to our video
+                    if file.suffix == '.srt' and (video_name.lower() in file.name.lower() or s_dir.name == video_name):
                         size = file.stat().st_size
+                        
+                        # Logic to guess language from filename (e.g. movie.fr.srt)
+                        lang_guess = "und"
+                        parts = file.name.split('.')
+                        if len(parts) > 2:
+                            lang_guess = parts[-2] # Takes the part before .srt
+
                         external_subs.append({
                             "id": str(uuid.uuid4()),
-                            "language": "und", # Ideally parsed from filename like 'en.srt'
+                            "language": lang_guess,
                             "isExternal": True,
                             "path": str(file),
+                            "fileName": file.name,
                             "fileSize": size,
-                            "isSdh": size > 50000 # Heuristic: larger files usually contain SDH/Ambient noise
+                            "isSdh": size > 50000 
                         })
         
-        # Sort by size descending so the "heaviest" is first in the list
         external_subs.sort(key=lambda x: x['fileSize'], reverse=True)
         return external_subs
 
@@ -89,6 +96,10 @@ class VideoScanner:
         video_files = []
         search_path = Path(self.base_path)
         
+        if not search_path.exists():
+            return []
+
+        # Glob pattern for recursive or flat search
         pattern = "**/*" if recursive else "*"
         
         for path in search_path.glob(pattern):
@@ -106,9 +117,9 @@ class VideoScanner:
                     "externalSubtitles": external,
                     "status": "idle",
                     "progress": 0,
-                    "outputLanguages": ["fr"], # Default selection
+                    "targetLanguage": "fr", # Unified with global settings
                     "shouldMux": True,
-                    "shouldRemoveOriginal": false
+                    "shouldRemoveOriginal": False # Fixed capitalization
                 })
         
         return video_files

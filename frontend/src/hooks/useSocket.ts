@@ -1,25 +1,23 @@
-export type SSEEvent = {
-  fileId: string;
-  status: string;
-  progress: number;
-  currentTask?: string;
-};
+"use client";
 
-export const createSSEConnection = (
-  onMessage: (data: SSEEvent) => void,
-  onError?: (error: Event) => void
-) => {
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-  const eventSource = new EventSource(`${API_BASE_URL}/events`);
+import { useEffect } from 'react';
+import { VideoFile } from '@/lib/types';
 
-  eventSource.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-    onMessage(data);
-  };
+export function useVideoStatus(
+  videos: VideoFile[], 
+  setVideos: React.Dispatch<React.SetStateAction<VideoFile[]>>
+) {
+  useEffect(() => {
+    // This is where your EventSource (SSE) or WebSocket logic goes
+    const eventSource = new EventSource(`${process.env.NEXT_PUBLIC_API_URL}/ws/status`);
 
-  if (onError) {
-    eventSource.onerror = onError;
-  }
+    eventSource.onmessage = (event) => {
+      const updatedVideo = JSON.parse(event.data);
+      setVideos((prevVideos) =>
+        prevVideos.map((v) => (v.id === updatedVideo.id ? updatedVideo : v))
+      );
+    };
 
-  return eventSource;
-};
+    return () => eventSource.close();
+  }, [setVideos]);
+}
