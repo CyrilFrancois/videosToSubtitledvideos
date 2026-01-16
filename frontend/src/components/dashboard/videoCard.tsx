@@ -82,19 +82,20 @@ function LanguageSelector({ label, selected, options, onToggle, isSingle = false
 
 // --- MAIN COMPONENT ---
 export default function VideoCard({ video, onStart, onCancel, updateVideoData, globalSettings }: any) {
-  // Use a fallback to ensure we never crash on null subInfo
   const subInfo = video.subtitleInfo || { hasSubtitles: false, subType: null, srtPath: "None" };
   const [showOffsets, setShowOffsets] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // 1. Determine active workflow
+  // 1. Determine active workflow with priority: Card Local State > Global Sidebar State
   const workflow = video.workflowMode || globalSettings?.workflowMode || 'hybrid';
   
-  const isExternalActive = workflow === 'external';
+  // Logic for button highlighting - specifically handles 'hybrid' resolution
   const isWhisperActive = 
     workflow === 'whisper' || 
     workflow === 'force_ai' || 
     (workflow === 'hybrid' && !subInfo.hasSubtitles);
+
+  const isExternalActive = workflow === 'external';
 
   const isEmbeddedActive = 
     !isWhisperActive && !isExternalActive && 
@@ -104,20 +105,13 @@ export default function VideoCard({ video, onStart, onCancel, updateVideoData, g
     !isWhisperActive && !isExternalActive && 
     (workflow === 'srt' || (workflow === 'hybrid' && subInfo.hasSubtitles && subInfo.subType !== 'embedded'));
 
-  // 2. Logic for the Hover Note - FIXED: Looking specifically at srtPath from the new Scanner
   const getSubPathNote = () => {
     const actualPath = subInfo.srtPath;
-    
-    if (subInfo.subType === 'embedded') {
-        return "Internal tracks detected (MKV/MP4)";
-    }
-
+    if (subInfo.subType === 'embedded') return "Internal tracks detected (MKV/MP4)";
     if (subInfo.hasSubtitles && actualPath && actualPath !== "None" && actualPath !== "Embedded") {
-      // Split by / or \ and get the last part (the filename)
       const fileName = actualPath.split(/[/\\]/).pop(); 
       return `External File: ${fileName}`;
     }
-    
     return undefined; 
   };
 
@@ -144,7 +138,6 @@ export default function VideoCard({ video, onStart, onCancel, updateVideoData, g
           <div className="flex items-center gap-2">
             <h3 className="text-sm font-semibold text-slate-100 truncate">{video.fileName}</h3>
             
-            {/* BADGE: Subtitle detection logic */}
             {subInfo.hasSubtitles && (
               <div 
                 title={getSubPathNote()}
@@ -165,7 +158,7 @@ export default function VideoCard({ video, onStart, onCancel, updateVideoData, g
 
       {/* Settings Grid */}
       <div className="px-4 py-3 border-t border-white/5 grid grid-cols-12 gap-4 items-end">
-        {/* Langs */}
+        {/* Languages */}
         <div className="col-span-3 space-y-2">
           <label className="text-[9px] text-gray-600 uppercase font-bold">Languages</label>
           <div className="space-y-1 bg-black/40 p-1.5 rounded border border-white/5 min-h-[85px] flex flex-col justify-center">

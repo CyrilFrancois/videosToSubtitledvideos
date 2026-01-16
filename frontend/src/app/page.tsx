@@ -31,7 +31,8 @@ export default function DashboardPage() {
 
   /**
    * PROPAGATION LOGIC
-   * Syncs global settings to individual items without overwriting existing detection
+   * This effect forces individual items to sync when the Sidebar (Global Settings) changes.
+   * By removing the "item.workflowMode ||" check, we ensure the Sidebar has authority.
    */
   useEffect(() => {
     if (items.length === 0) return;
@@ -46,13 +47,12 @@ export default function DashboardPage() {
             };
           }
 
-          // Smart Propagation: Only update workflow if it's currently at default
-          // or if the user explicitly changed the global mode.
           return {
             ...item,
             sourceLang: globalSettings.sourceLang[0],
             targetLanguages: [...globalSettings.targetLanguages],
-            workflowMode: item.workflowMode || globalSettings.workflowMode,
+            // FIX: Force update workflowMode when global settings change
+            workflowMode: globalSettings.workflowMode, 
             children: null
           };
         });
@@ -81,7 +81,7 @@ export default function DashboardPage() {
     if (mode === 'force_ai' || mode === 'whisper') return 'whisper';
     if (mode !== 'hybrid') return mode;
     
-    // Hybrid logic
+    // Hybrid logic: determine best path based on detection
     if (subInfo?.subType === 'external' || subInfo?.subType === 'external_isolated') return 'srt';
     if (subInfo?.subType === 'embedded') return 'embedded';
     return 'whisper';
@@ -89,45 +89,36 @@ export default function DashboardPage() {
 
   /**
    * SCAN LOGIC + DATA NORMALIZATION
-   * Maps backend scanner results to the frontend VideoFile type
    */
   const handleInitialDeepScan = useCallback(async () => {
     setIsScanning(true);
     try {
       const data = await api.scanFolder("/data", true); 
-      console.log("🔍 RAW API RESPONSE:", data);
       
       if (data && data.files) {
         const processDeepItems = (files: any[]): VideoFile[] => {
           return files.map(item => {
             const rawSubInfo = item.subtitleInfo || {};
             
-            // Normalize sub info to match VideoCard expectations
             const normalizedSubInfo = {
               hasSubtitles: !!rawSubInfo.hasSubtitles,
               subType: rawSubInfo.subType || null,
               languages: rawSubInfo.languages || [],
               foundFiles: rawSubInfo.foundFiles || [],
-              srtPath: rawSubInfo.srtPath || "None", // Matches scanner.py output
+              srtPath: rawSubInfo.srtPath || "None",
               count: rawSubInfo.count || 0
             };
 
-            // Determine initial workflow based on detection
-            let initialWorkflow = globalSettings.workflowMode;
-            if (initialWorkflow === 'hybrid') {
-              if (normalizedSubInfo.subType === 'embedded') initialWorkflow = 'embedded';
-              else if (normalizedSubInfo.hasSubtitles) initialWorkflow = 'srt';
-            }
-
             return {
               ...item,
-              id: item.filePath, // Use path as ID for consistency
+              id: item.filePath,
               status: item.is_directory ? 'folder' : 'idle',
               progress: 0,
               subtitleInfo: normalizedSubInfo,
               sourceLang: item.is_directory ? undefined : globalSettings.sourceLang[0],
               targetLanguages: item.is_directory ? undefined : [...globalSettings.targetLanguages],
-              workflowMode: item.is_directory ? undefined : initialWorkflow,
+              // Initialize with the current global mode
+              workflowMode: item.is_directory ? undefined : globalSettings.workflowMode,
               syncOffset: item.is_directory ? undefined : 0,
               children: item.is_directory ? processDeepItems(item.children || []) : null
             };
@@ -163,7 +154,6 @@ export default function DashboardPage() {
       videos: targetVideos.map(v => {
         const currentWorkflow = resolveWorkflow(v.subtitleInfo, v.workflowMode || 'hybrid');
         
-        // Define path to send to processing engine
         let srtPath = "None";
         if (currentWorkflow === 'embedded') {
           srtPath = "Embedded";
@@ -191,7 +181,6 @@ export default function DashboardPage() {
 
     console.log("🚀 JOB PAYLOAD:", JSON.stringify(payload, null, 2));
     
-    // Update UI status
     targetVideos.forEach(v => updateVideoData(v.id, { status: 'processing' }));
     
     try {
