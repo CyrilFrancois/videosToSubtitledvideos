@@ -5,7 +5,6 @@ import Sidebar from '@/components/layout/Sidebar';
 import GlobalProgress from '@/components/dashboard/GlobalProgress';
 import VideoList from '@/components/dashboard/VideoList';
 import { api } from '@/lib/api';
-import { Folder } from 'lucide-react';
 import { VideoFile } from '@/lib/types';
 
 export default function DashboardPage() {
@@ -16,7 +15,7 @@ export default function DashboardPage() {
   
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  // Global Settings initialized for the "Smart" logic
+  // Global Settings for SubStudio Studio Logic
   const [globalSettings, setGlobalSettings] = useState({
     sourceLang: ['auto'],
     targetLanguages: ['fr'], 
@@ -35,7 +34,7 @@ export default function DashboardPage() {
   const handleInitialDeepScan = useCallback(async () => {
     setIsScanning(true);
     try {
-      // API now returns the full nested tree
+      // API call to SubStudio Backend
       const data = await api.scanFolder("/data", true); 
       if (data && data.files) {
         const processDeepItems = (files: any[]): VideoFile[] => {
@@ -44,7 +43,6 @@ export default function DashboardPage() {
             id: item.filePath,
             status: item.is_directory ? 'folder' : 'idle',
             progress: 0,
-            // Ensure subtitleInfo is passed through correctly
             subtitleInfo: item.subtitleInfo || { hasSubtitles: false, languages: [], count: 0 },
             children: item.is_directory ? processDeepItems(item.children || []) : null
           }));
@@ -53,13 +51,12 @@ export default function DashboardPage() {
         setItems(processDeepItems(data.files));
       }
     } catch (e) {
-      console.error("❌ Deep Scan Error:", e);
+      console.error("❌ SubStudio Scan Error:", e);
     } finally {
       setIsScanning(false);
     }
   }, []);
 
-  // Helper to flatten the tree for processing while maintaining current state
   const getSelectedFilesList = useCallback(() => {
     const selectedFiles: VideoFile[] = [];
     const traverse = (list: VideoFile[]) => {
@@ -103,7 +100,6 @@ export default function DashboardPage() {
       const fileIds = selectedFiles.map(f => f.id);
       await api.startProcessing(fileIds, globalSettings);
       
-      // Update UI status to 'processing' for selected files
       const markProcessing = (list: VideoFile[]): VideoFile[] => {
         return list.map(item => ({
           ...item,
@@ -114,7 +110,7 @@ export default function DashboardPage() {
       setItems(prev => markProcessing(prev));
       
     } catch (e) {
-      alert("Error starting process: " + (e as Error).message);
+      alert("Error starting batch: " + (e as Error).message);
     }
   };
 
@@ -134,28 +130,23 @@ export default function DashboardPage() {
       />
 
       <main className="flex-1 relative overflow-hidden flex flex-col">
+        {/* Only show progress if we have active files */}
         <GlobalProgress videos={selectedFiles} />
         
         <div className="flex-1 overflow-auto p-6">
-          {items.length === 0 && !isScanning ? (
-            <div className="h-full flex flex-col items-center justify-center opacity-20 border-2 border-dashed border-white/5 rounded-3xl">
-              <Folder size={64} strokeWidth={1} className="mb-4" />
-              <p className="text-lg font-medium tracking-tight">Library is empty or path not found</p>
-            </div>
-          ) : (
-            <VideoList 
-              videos={items} 
-              onNavigate={setCurrentPath} 
-              onStartJob={(id) => {
-                // Individual start
-                api.startProcessing([id], globalSettings);
-              }} 
-              onCancelJob={(id) => api.cancelJob(id)}
-              selectedIds={selectedIds}
-              toggleSelection={toggleSelection}
-              globalSettings={globalSettings}
-            />
-          )}
+          {/* VideoList now handles both the Loading state (with the SubStudio message)
+            and the Empty state internally for a cleaner UI flow.
+          */}
+          <VideoList 
+            videos={items} 
+            isLoading={isScanning}
+            onNavigate={setCurrentPath} 
+            onStartJob={(id) => api.startProcessing([id], globalSettings)} 
+            onCancelJob={(id) => api.cancelJob(id)}
+            selectedIds={selectedIds}
+            toggleSelection={toggleSelection}
+            globalSettings={globalSettings}
+          />
         </div>
       </main>
     </div>

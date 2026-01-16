@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { 
-  Folder, Play, Trash2, Layers, Volume2, Text,
+  Folder, Play, Trash2, Volume2, Text,
   Check, Loader2, ChevronDown, Cpu, Zap
 } from 'lucide-react';
 
@@ -98,7 +98,7 @@ export default function Sidebar({
     <aside className="w-80 bg-[#0a0a0a] border-r border-white/10 flex flex-col p-6 z-20 h-full overflow-y-auto custom-scrollbar">
       <div className="mb-10">
         <h1 className="text-xl font-bold text-white uppercase tracking-tighter">
-          SubStudio <span className="text-indigo-500 text-xs block opacity-70">The Local Standard for Video Transcription.</span>
+          SubStudio <span className="text-indigo-500 text-xs block opacity-70 mt-1">Local Processing Studio</span>
         </h1>
       </div>
 
@@ -132,8 +132,8 @@ export default function Sidebar({
           </div>
         </section>
 
-        {/* CONFIG SECTION */}
-        <section className={`space-y-6 transition-all duration-500 ${!hasVideos ? 'opacity-20 pointer-events-none grayscale' : 'opacity-100'}`}>
+        {/* CONFIG SECTION - Disabled during scan or if no videos */}
+        <section className={`space-y-6 transition-all duration-500 ${(!hasVideos || isScanning) ? 'opacity-20 pointer-events-none grayscale' : 'opacity-100'}`}>
           
           {/* LANGUAGE SETUP */}
           <div className="space-y-2">
@@ -145,7 +145,7 @@ export default function Sidebar({
                 options={availableLanguages} 
                 onToggle={(id) => setGlobalSettings({
                   ...globalSettings, 
-                  sourceLang: [id] // Force array format to match VideoCard state
+                  sourceLang: [id] 
                 })} 
                 isSingle 
                 showAuto 
@@ -173,16 +173,16 @@ export default function Sidebar({
                 value={globalSettings?.workflowMode || "hybrid"}
                 onChange={(e) => setGlobalSettings({...globalSettings, workflowMode: e.target.value})}
               >
-                <option value="hybrid">Smart: Use SRT (AI Fallback)</option>
-                <option value="force_ai">Manual: Force AI Transcription</option>
+                <option value="hybrid">Smart: Use SRT (Local Fallback)</option>
+                <option value="force_ai">Manual: Force Transcription</option>
               </select>
               <ChevronDown size={12} className="absolute right-3 top-3.5 text-gray-600 pointer-events-none" />
             </div>
           </div>
 
-          {/* WHISPER MODEL */}
+          {/* ENGINE SETTINGS */}
           <div className="space-y-2">
-            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2 block">Whisper Model</label>
+            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2 block">Transcription Engine</label>
             <div className="relative">
               <Cpu size={12} className="absolute left-3 top-3.5 text-gray-500" />
               <select 
@@ -190,9 +190,9 @@ export default function Sidebar({
                 value={globalSettings?.modelSize || "base"}
                 onChange={(e) => setGlobalSettings({...globalSettings, modelSize: e.target.value})}
               >
-                <option value="tiny">Tiny (Fastest)</option>
-                <option value="base">Base (Recommended)</option>
-                <option value="large-v3">Large-v3 (Accurate)</option>
+                <option value="tiny">Tiny (Instant)</option>
+                <option value="base">Base (Balanced)</option>
+                <option value="large-v3">Large-v3 (Studio Grade)</option>
               </select>
               <ChevronDown size={12} className="absolute right-3 top-3.5 text-gray-500 pointer-events-none" />
             </div>
@@ -212,7 +212,7 @@ export default function Sidebar({
             </label>
 
             <label className="flex items-center justify-between cursor-pointer group">
-              <span className="text-xs text-gray-400 group-hover:text-gray-200 transition-colors">Mux into MKV</span>
+              <span className="text-xs text-gray-400 group-hover:text-gray-200 transition-colors">Mux into MKV Container</span>
               <input 
                 type="checkbox" 
                 className="sr-only peer"
@@ -224,7 +224,7 @@ export default function Sidebar({
 
             <label className="flex items-center justify-between cursor-pointer group">
               <span className="text-xs text-red-400/80 group-hover:text-red-400 transition-colors flex items-center gap-2">
-                <Trash2 size={14}/> Cleanup Original
+                <Trash2 size={14}/> Studio Cleanup
               </span>
               <input 
                 type="checkbox" 
@@ -244,8 +244,8 @@ export default function Sidebar({
           onClick={() => onProcessAll()}
           className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-20 disabled:grayscale text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all"
         >
-          <Play size={18} fill="currentColor" />
-          START BATCH
+          {isScanning ? <Loader2 size={18} className="animate-spin" /> : <Play size={18} fill="currentColor" />}
+          {isScanning ? "STUDIO BUSY..." : "START BATCH"}
         </button>
       </div>
     </aside>

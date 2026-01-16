@@ -2,26 +2,28 @@
 
 import React, { useState } from 'react';
 import VideoCard from './VideoCard';
-import { Ghost, ChevronRight, ChevronDown, Folder } from 'lucide-react';
+import { Ghost, ChevronRight, ChevronDown, Folder, Loader2 } from 'lucide-react';
 
 interface VideoListProps {
   videos: any[];
+  isLoading?: boolean; // New prop to track initialization
   onStartJob: (id: string) => void;
   onCancelJob: (id: string) => void;
   onNavigate: (path: string) => void;
   selectedIds: Set<string>;
   toggleSelection: (id: string, isDirectory: boolean, children?: any[]) => void;
-  globalSettings: any; // Added this prop
+  globalSettings: any;
 }
 
 export default function VideoList({ 
   videos, 
+  isLoading = false, // Default to false
   onStartJob, 
   onCancelJob, 
   onNavigate,
   selectedIds,
   toggleSelection,
-  globalSettings // Added this prop
+  globalSettings
 }: VideoListProps) {
   
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
@@ -37,6 +39,30 @@ export default function VideoList({
     setExpandedFolders(newExpanded);
   };
 
+  // 1. LOADING STATE (The "Studio Initialization" view)
+  if (isLoading) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center text-center p-20 animate-in fade-in duration-500">
+        <div className="relative mb-8">
+          <div className="absolute inset-0 bg-indigo-500/20 blur-3xl rounded-full" />
+          <div className="relative w-20 h-20 rounded-3xl bg-white/[0.03] border border-white/10 flex items-center justify-center">
+            <Loader2 className="text-indigo-500 animate-spin" size={40} />
+          </div>
+        </div>
+        <h3 className="text-xl font-bold text-white mb-3">Initializing SubStudio</h3>
+        <p className="max-w-md text-sm text-gray-400 leading-relaxed">
+          Scanning media library and synchronizing metadata. This may take a moment while we decrypt local streams and link existing subtitle files.
+        </p>
+        <div className="mt-8 flex gap-1">
+          <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-bounce" style={{ animationDelay: '0ms' }} />
+          <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-bounce" style={{ animationDelay: '150ms' }} />
+          <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-bounce" style={{ animationDelay: '300ms' }} />
+        </div>
+      </div>
+    );
+  }
+
+  // 2. EMPTY STATE (Only shown if NOT loading and videos.length is 0)
   if (videos.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-center p-20 border-2 border-dashed border-white/5 rounded-3xl">
@@ -44,18 +70,19 @@ export default function VideoList({
           <Ghost size={40} />
         </div>
         <h3 className="text-xl font-bold text-gray-300">No items found</h3>
+        <p className="text-xs text-gray-500 mt-2">Check your source path or try refreshing the scan.</p>
       </div>
     );
   }
 
+  // 3. MAIN LIST
   return (
     <section className="flex-1 overflow-y-auto custom-scrollbar">
       <div className="max-w-5xl mx-auto space-y-2 pb-10">
         {videos.map((item) => (
           <div key={item.id} className="flex flex-col">
-            
-            {/* FOLDER ROW */}
             {item.is_directory ? (
+              /* FOLDER ROW (Code remains the same as your source) */
               <div 
                 onClick={() => handleFolderClick(item.id, item.filePath)}
                 className="group flex items-center bg-white/[0.03] hover:bg-indigo-500/10 rounded-xl transition-all pr-4 py-4 my-1 cursor-pointer border border-white/5 shadow-sm"
@@ -68,23 +95,19 @@ export default function VideoList({
                     onChange={() => toggleSelection(item.id, item.is_directory, item.children)}
                   />
                 </div>
-
                 <div className="mr-3 text-indigo-400/70 group-hover:text-indigo-400 transition-colors">
                    {expandedFolders.has(item.id) ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
                 </div>
-
                 <Folder size={20} className="mr-3 text-indigo-400/60" fill="currentColor" />
-                
                 <span className="text-[15px] font-semibold text-gray-200 group-hover:text-white transition-colors truncate flex-1">
                   {item.fileName}
                 </span>
-
                 <span className="text-[10px] font-mono text-gray-600 uppercase tracking-widest ml-4">
                   {item.children?.length || 0} items
                 </span>
               </div>
             ) : (
-              /* VIDEO ROW */
+              /* VIDEO ROW (Code remains the same as your source) */
               <div className="flex items-center group bg-white/[0.02] hover:bg-white/[0.04] rounded-2xl transition-colors pr-2">
                 <div className="pl-4 pr-2">
                   <input 
@@ -94,34 +117,33 @@ export default function VideoList({
                     onChange={() => toggleSelection(item.id, item.is_directory, item.children)}
                   />
                 </div>
-
                 <div className="w-8 flex justify-center invisible">
                   <ChevronRight size={18} />
                 </div>
-
                 <div className="flex-1">
                   <VideoCard 
                     video={item} 
                     onStart={onStartJob}
                     onCancel={onCancelJob}
                     onNavigate={onNavigate}
-                    globalSettings={globalSettings} // Passed to card
+                    globalSettings={globalSettings}
                   />
                 </div>
               </div>
             )}
 
-            {/* RECURSIVE RENDER (Indented) */}
+            {/* RECURSIVE RENDER */}
             {item.is_directory && expandedFolders.has(item.id) && item.children && (
                <div className="ml-8 mt-1 border-l-2 border-white/5 pl-4 space-y-2">
                   <VideoList 
                     videos={item.children}
+                    isLoading={false} // Don't show global loader in subfolders
                     onStartJob={onStartJob}
                     onCancelJob={onCancelJob}
                     onNavigate={onNavigate}
                     selectedIds={selectedIds}
                     toggleSelection={toggleSelection}
-                    globalSettings={globalSettings} // Passed to sub-folder list
+                    globalSettings={globalSettings}
                   />
                </div>
             )}
