@@ -78,7 +78,7 @@ class SubtitleTranslator:
                     ],
                     temperature=0.3
                 )
-                translated_blocks.append(response.choices[0].message.content.strip())
+                translated_blocks.append(response.choices[0].message.content.replace("```srt","").replace("```","").strip())
                 
                 if i % 50 == 0:
                     logger.info(f"🧵 [LLM] Processed {current_batch_num}/{total_batches} batches...")
