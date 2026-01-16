@@ -1,12 +1,14 @@
 "use client";
 
 import SubImportModal from './SubImportModal';
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   Folder, Volume2, Text, Link as LinkIcon, ChevronRight, 
   Clock, Upload, Cpu, ChevronDown, Check, X, Globe, FileText, Search
 } from 'lucide-react';
+// Assuming your api helper is in this path
+import { uploadSubtitle } from '@/lib/api'; 
 
 // --- SUB-COMPONENT: PortalDropdown ---
 function PortalDropdown({ isOpen, anchorRef, children }) {
@@ -94,11 +96,23 @@ export default function VideoCard({ video, onStart, onCancel, onNavigate, global
     }
   }, [globalSettings]);
 
-  const handleFileUpload = async (file: File) => {
-    // Logic for uploading the SRT would go here
-    setWorkflow('external');
-    setIsModalOpen(false);
-    alert(`File ${file.name} ready for processing.`);
+  // Updated handler to call the Python backend API
+  const handleFileUpload = async (file: File, targetName: string, destinationPath: string) => {
+    try {
+      await uploadSubtitle(file, targetName, destinationPath);
+      setWorkflow('external');
+      setIsModalOpen(false);
+      // You could trigger a re-scan here or just show a success message
+      console.log(`Subtitle saved as ${targetName} in ${destinationPath}`);
+    } catch (error) {
+      console.error("Upload failed:", error);
+      alert("Failed to save the subtitle to the server.");
+    }
+  };
+
+  // Helper to get the directory path (removing the filename from the end)
+  const getDirPath = (filePath: string) => {
+    return filePath.substring(0, filePath.lastIndexOf('/'));
   };
 
   const rawLangData = process.env.NEXT_PUBLIC_LANGUAGES || '{"English":"en", "French":"fr", "Spanish":"es", "German":"de"}';
@@ -176,10 +190,12 @@ export default function VideoCard({ video, onStart, onCancel, onNavigate, global
         </div>
       )}
 
+      {/* Modal is now passed the target directory path extracted from video.filePath */}
       <SubImportModal 
         isOpen={isModalOpen} 
         onClose={() => setIsModalOpen(false)} 
         videoName={video.fileName} 
+        videoPath={getDirPath(video.filePath)}
         onFileSelect={handleFileUpload} 
       />
     </div>

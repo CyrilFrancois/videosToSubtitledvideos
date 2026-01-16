@@ -1,6 +1,7 @@
 import asyncio
 import os
-from fastapi import FastAPI, BackgroundTasks, HTTPException, WebSocket, WebSocketDisconnect, Query
+import shutil
+from fastapi import FastAPI, BackgroundTasks, HTTPException, WebSocket, WebSocketDisconnect, Query, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
@@ -26,6 +27,7 @@ class ProcessRequest(BaseModel):
 # --- 2. INITIALIZATION ---
 app = FastAPI()
 
+# Configure CORS for Next.js frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
@@ -34,7 +36,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize scanner with the correct base path
+# Initialize scanner with the base path
 scanner = VideoScanner(base_path="/data")
 
 # Event Manager setup
@@ -97,7 +99,6 @@ async def run_pipeline(file_ids: List[str], settings: ProcessRequest):
                 event_manager.emit(fid, "done", 100, f"Success! Output: {os.path.basename(output_path)}")
             else:
                 event_manager.emit(fid, "processing", 90, "Saving external SRT files...")
-                # Logic to save .srt files to disk next to video
                 event_manager.emit(fid, "done", 100, "Success! Sidecar SRTs created.")
             
         except Exception as e:
@@ -114,10 +115,8 @@ async def scan_library(target_path: str = Query("/data")):
     if not os.path.exists(target_path):
         raise HTTPException(status_code=404, detail=f"Path {target_path} not found")
 
-    # Scan the file system
     items = scanner.scan(target_path=target_path, recursive=True)
     
-    # Update the cache so the /process endpoint knows file paths by ID
     def update_cache_recursive(nodes):
         for node in nodes:
             if not node.get('is_directory'):
@@ -133,6 +132,46 @@ async def scan_library(target_path: str = Query("/data")):
         "files": items
     }
 
+@app.post("/api/subtitles/upload")
+async def upload_subtitle(
+    file: UploadFile = File(...),
+    targetName: str = Form(...),
+    destinationPath: str = Form(...)
+):
+    """
+    Receives an SRT file and saves it in the specified directory.
+    If the file exists, appends _1, _2, etc.
+    """
+    try:
+        # Security: Validation
+        if not destinationPath.startswith("/data"):
+            raise HTTPException(status_code=403, detail="Forbidden: Path must be within /data")
+        
+        if not os.path.exists(destinationPath):
+            raise HTTPException(status_code=404, detail="Destination directory does not exist")
+
+        # File Naming Logic
+        base, ext = os.path.splitext(targetName)
+        final_file_path = os.path.join(destinationPath, targetName)
+        
+        counter = 1
+        while os.path.exists(final_file_path):
+            final_file_path = os.path.join(destinationPath, f"{base}_{counter}{ext}")
+            counter += 1
+
+        # Save File
+        with open(final_file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        return {
+            "status": "success",
+            "savedPath": final_file_path,
+            "fileName": os.path.basename(final_file_path)
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
 @app.post("/api/process")
 async def start_processing(request: ProcessRequest, background_tasks: BackgroundTasks):
     if not request.fileIds:
@@ -146,17 +185,14 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     try:
         while True:
-            # Maintain connection, listeners will receive data via event_manager
             await websocket.receive_text()
     except WebSocketDisconnect:
         pass
 
 @app.delete("/api/cancel/{file_id}")
 async def cancel_job(file_id: str):
-    # logic to interrupt the specific thread/task if needed
     return {"status": "cancelled", "id": file_id}
 
 if __name__ == "__main__":
     import uvicorn
-    # Use 0.0.0.0 for Docker compatibility
     uvicorn.run(app, host="0.0.0.0", port=8000)
