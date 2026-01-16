@@ -103,11 +103,15 @@ class VideoMuxer:
             for i, lang_code in enumerate(srt_keys):
                 out_idx = v_count + a_count + s_count + i
                 iso_lang = self.lang_map.get(lang_code.lower(), lang_code)
+                logger.info("plop1" + iso_lang)
                 
                 output_args[f'metadata:s:{out_idx}'] = f'language={iso_lang}'
                 # Use a single string for multiple metadata tags if needed, 
                 # but ffmpeg-python handles multiple metadata keys fine if keys are unique.
-                output_args[f'metadata:s:{out_idx}'] += f":title=AI {lang_code.upper()}"
+                # output_args[f'metadata:s:{out_idx}'] += f":title=AI {lang_code.upper()}"
+
+                logger.info(output_args)
+                #{'c': 'copy', 'map_metadata': 0, 'metadata:s:2': 'language=fra:title=AI FR'}
                 
                 # Disposition
                 disposition = 'default' if i == 0 else '0'
@@ -118,6 +122,8 @@ class VideoMuxer:
             # 6. Final Assembly
             # We explicitly map stream 0 (all streams from video) and stream 0 from each srt
             input_files = [main_input] + srt_inputs
+
+            logger.info(input_files)
             
             # Create the final process
             # We use global_args to force separate -map flags which prevents the '0, 1:0' error
