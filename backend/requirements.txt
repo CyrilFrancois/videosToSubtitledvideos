@@ -13,6 +13,7 @@ torchaudio
 torchvision
 
 # Media Processing
+langdetect
 ffmpeg-python
 
 # System & Utilities
