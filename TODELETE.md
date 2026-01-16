@@ -402,5 +402,3 @@ source: "Embedded", "External (Match)", or "External (Assigned)".
 detected_lang: The result of the Filename/NLP detection (e.g., "fr" or "und").
 
 count: Number of tracks/files found.
-
-Would you like to see how the backend Python/Node script would look to handle that "Content Sampling" step for automatic language detection?

@@ -12,10 +12,8 @@ export default function DashboardPage() {
   const [isScanning, setIsScanning] = useState(false);
   const [currentPath, setCurrentPath] = useState("/data");
   const [mounted, setMounted] = useState(false);
-  
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  // Global Settings for SubStudio Studio Logic
   const [globalSettings, setGlobalSettings] = useState({
     sourceLang: ['auto'],
     targetLanguages: ['fr'], 
@@ -31,23 +29,110 @@ export default function DashboardPage() {
     handleInitialDeepScan();
   }, []);
 
+  /**
+   * PROPAGATION LOGIC
+   * Syncs global settings to individual items without overwriting existing detection
+   */
+  useEffect(() => {
+    if (items.length === 0) return;
+
+    setItems(prevItems => {
+      const propagate = (list: VideoFile[]): VideoFile[] => {
+        return list.map(item => {
+          if (item.is_directory) {
+            return {
+              ...item,
+              children: item.children ? propagate(item.children) : null
+            };
+          }
+
+          // Smart Propagation: Only update workflow if it's currently at default
+          // or if the user explicitly changed the global mode.
+          return {
+            ...item,
+            sourceLang: globalSettings.sourceLang[0],
+            targetLanguages: [...globalSettings.targetLanguages],
+            workflowMode: item.workflowMode || globalSettings.workflowMode,
+            children: null
+          };
+        });
+      };
+      return propagate(prevItems);
+    });
+  }, [globalSettings.sourceLang, globalSettings.targetLanguages, globalSettings.workflowMode]);
+
+  const updateVideoData = useCallback((id: string, updates: Partial<VideoFile>) => {
+    setItems(prevItems => {
+      const updateRecursive = (list: VideoFile[]): VideoFile[] => {
+        return list.map(item => {
+          if (item.id === id) return { ...item, ...updates };
+          if (item.children) return { ...item, children: updateRecursive(item.children) };
+          return item;
+        });
+      };
+      return updateRecursive(prevItems);
+    });
+  }, []);
+
+  /**
+   * Resolves the final workflow string for the backend payload
+   */
+  const resolveWorkflow = (subInfo: any, mode: string) => {
+    if (mode === 'force_ai' || mode === 'whisper') return 'whisper';
+    if (mode !== 'hybrid') return mode;
+    
+    // Hybrid logic
+    if (subInfo?.subType === 'external' || subInfo?.subType === 'external_isolated') return 'srt';
+    if (subInfo?.subType === 'embedded') return 'embedded';
+    return 'whisper';
+  };
+
+  /**
+   * SCAN LOGIC + DATA NORMALIZATION
+   * Maps backend scanner results to the frontend VideoFile type
+   */
   const handleInitialDeepScan = useCallback(async () => {
     setIsScanning(true);
     try {
-      // API call to SubStudio Backend
       const data = await api.scanFolder("/data", true); 
+      console.log("🔍 RAW API RESPONSE:", data);
+      
       if (data && data.files) {
         const processDeepItems = (files: any[]): VideoFile[] => {
-          return files.map(item => ({
-            ...item,
-            id: item.filePath,
-            status: item.is_directory ? 'folder' : 'idle',
-            progress: 0,
-            subtitleInfo: item.subtitleInfo || { hasSubtitles: false, languages: [], count: 0 },
-            children: item.is_directory ? processDeepItems(item.children || []) : null
-          }));
-        };
+          return files.map(item => {
+            const rawSubInfo = item.subtitleInfo || {};
+            
+            // Normalize sub info to match VideoCard expectations
+            const normalizedSubInfo = {
+              hasSubtitles: !!rawSubInfo.hasSubtitles,
+              subType: rawSubInfo.subType || null,
+              languages: rawSubInfo.languages || [],
+              foundFiles: rawSubInfo.foundFiles || [],
+              srtPath: rawSubInfo.srtPath || "None", // Matches scanner.py output
+              count: rawSubInfo.count || 0
+            };
 
+            // Determine initial workflow based on detection
+            let initialWorkflow = globalSettings.workflowMode;
+            if (initialWorkflow === 'hybrid') {
+              if (normalizedSubInfo.subType === 'embedded') initialWorkflow = 'embedded';
+              else if (normalizedSubInfo.hasSubtitles) initialWorkflow = 'srt';
+            }
+
+            return {
+              ...item,
+              id: item.filePath, // Use path as ID for consistency
+              status: item.is_directory ? 'folder' : 'idle',
+              progress: 0,
+              subtitleInfo: normalizedSubInfo,
+              sourceLang: item.is_directory ? undefined : globalSettings.sourceLang[0],
+              targetLanguages: item.is_directory ? undefined : [...globalSettings.targetLanguages],
+              workflowMode: item.is_directory ? undefined : initialWorkflow,
+              syncOffset: item.is_directory ? undefined : 0,
+              children: item.is_directory ? processDeepItems(item.children || []) : null
+            };
+          });
+        };
         setItems(processDeepItems(data.files));
       }
     } catch (e) {
@@ -55,15 +140,13 @@ export default function DashboardPage() {
     } finally {
       setIsScanning(false);
     }
-  }, []);
+  }, [globalSettings.workflowMode, globalSettings.sourceLang, globalSettings.targetLanguages]);
 
   const getSelectedFilesList = useCallback(() => {
     const selectedFiles: VideoFile[] = [];
     const traverse = (list: VideoFile[]) => {
       list.forEach(item => {
-        if (!item.is_directory && selectedIds.has(item.id)) {
-          selectedFiles.push(item);
-        }
+        if (!item.is_directory && selectedIds.has(item.id)) selectedFiles.push(item);
         if (item.children) traverse(item.children);
       });
     };
@@ -72,47 +155,67 @@ export default function DashboardPage() {
   }, [items, selectedIds]);
 
   const selectedFiles = useMemo(() => getSelectedFilesList(), [getSelectedFilesList]);
-  const selectedFilesCount = selectedFiles.length;
 
-  const toggleSelection = useCallback((id: string, isDirectory: boolean, children?: any[]) => {
+  const handleProcess = useCallback(async (targetVideos: VideoFile[]) => {
+    if (targetVideos.length === 0) return;
+
+    const payload = {
+      videos: targetVideos.map(v => {
+        const currentWorkflow = resolveWorkflow(v.subtitleInfo, v.workflowMode || 'hybrid');
+        
+        // Define path to send to processing engine
+        let srtPath = "None";
+        if (currentWorkflow === 'embedded') {
+          srtPath = "Embedded";
+        } else if (currentWorkflow === 'srt' || v.workflowMode === 'external') {
+          srtPath = v.subtitleInfo?.srtPath || "None";
+        }
+
+        return {
+          name: v.fileName,
+          path: v.filePath,
+          srtFoundPath: srtPath,
+          src: v.sourceLang || 'auto',
+          out: v.targetLanguages || [],
+          workflowMode: currentWorkflow,
+          syncOffset: v.syncOffset || 0
+        };
+      }),
+      globalOptions: {
+        transcriptionEngine: globalSettings.modelSize,
+        generateSRT: globalSettings.autoGenerate,
+        muxIntoMkv: globalSettings.shouldMux,
+        cleanUp: globalSettings.shouldRemoveOriginal
+      }
+    };
+
+    console.log("🚀 JOB PAYLOAD:", JSON.stringify(payload, null, 2));
+    
+    // Update UI status
+    targetVideos.forEach(v => updateVideoData(v.id, { status: 'processing' }));
+    
+    try {
+      // await api.startJob(payload);
+    } catch (err) {
+      console.error("Job Failed:", err);
+      targetVideos.forEach(v => updateVideoData(v.id, { status: 'idle' }));
+    }
+  }, [globalSettings, updateVideoData]);
+
+  const toggleSelection = useCallback((id: string, isDir: boolean, children?: any[]) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
       const isAdding = !next.has(id);
-
-      const applyToggle = (targetId: string, itemChildren?: any[]) => {
-        if (isAdding) next.add(targetId);
-        else next.delete(targetId);
-
-        if (itemChildren && itemChildren.length > 0) {
-          itemChildren.forEach(child => applyToggle(child.id, child.children));
-        }
+      
+      const apply = (tId: string, c?: any[]) => {
+        isAdding ? next.add(tId) : next.delete(tId);
+        if (c) c.forEach(child => apply(child.id, child.children));
       };
-
-      applyToggle(id, children);
+      
+      apply(id, children);
       return next;
     });
   }, []);
-
-  const handleProcessSelected = async () => {
-    if (selectedFilesCount === 0) return alert("Please select at least one video file.");
-    
-    try {
-      const fileIds = selectedFiles.map(f => f.id);
-      await api.startProcessing(fileIds, globalSettings);
-      
-      const markProcessing = (list: VideoFile[]): VideoFile[] => {
-        return list.map(item => ({
-          ...item,
-          status: selectedIds.has(item.id) && !item.is_directory ? 'processing' : item.status,
-          children: item.children ? markProcessing(item.children) : null
-        })) as VideoFile[];
-      };
-      setItems(prev => markProcessing(prev));
-      
-    } catch (e) {
-      alert("Error starting batch: " + (e as Error).message);
-    }
-  };
 
   if (!mounted) return <div className="bg-[#0a0a0a] h-screen w-full" />;
 
@@ -124,28 +227,23 @@ export default function DashboardPage() {
         isScanning={isScanning}
         globalSettings={globalSettings}
         setGlobalSettings={setGlobalSettings}
-        onProcessAll={handleProcessSelected}
-        hasVideos={selectedFilesCount > 0} 
-        selectedCount={selectedFilesCount} 
+        onProcessAll={() => handleProcess(selectedFiles)}
+        hasVideos={selectedFiles.length > 0} 
       />
 
       <main className="flex-1 relative overflow-hidden flex flex-col">
-        {/* Only show progress if we have active files */}
         <GlobalProgress videos={selectedFiles} />
-        
         <div className="flex-1 overflow-auto p-6">
-          {/* VideoList now handles both the Loading state (with the SubStudio message)
-            and the Empty state internally for a cleaner UI flow.
-          */}
           <VideoList 
             videos={items} 
             isLoading={isScanning}
             onNavigate={setCurrentPath} 
-            onStartJob={(id) => api.startProcessing([id], globalSettings)} 
+            onStartJob={(video) => handleProcess([video])}
             onCancelJob={(id) => api.cancelJob(id)}
             selectedIds={selectedIds}
             toggleSelection={toggleSelection}
             globalSettings={globalSettings}
+            updateVideoData={updateVideoData} 
           />
         </div>
       </main>

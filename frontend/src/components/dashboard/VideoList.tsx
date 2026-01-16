@@ -3,27 +3,30 @@
 import React, { useState } from 'react';
 import VideoCard from './VideoCard';
 import { Ghost, ChevronRight, ChevronDown, Folder, Loader2 } from 'lucide-react';
+import { VideoFile } from '@/lib/types';
 
 interface VideoListProps {
-  videos: any[];
-  isLoading?: boolean; // New prop to track initialization
-  onStartJob: (id: string) => void;
+  videos: VideoFile[];
+  isLoading?: boolean;
+  onStartJob: (video: VideoFile) => void;
   onCancelJob: (id: string) => void;
   onNavigate: (path: string) => void;
   selectedIds: Set<string>;
   toggleSelection: (id: string, isDirectory: boolean, children?: any[]) => void;
   globalSettings: any;
+  updateVideoData: (id: string, updates: Partial<VideoFile>) => void; // Added updater
 }
 
 export default function VideoList({ 
   videos, 
-  isLoading = false, // Default to false
+  isLoading = false, 
   onStartJob, 
   onCancelJob, 
   onNavigate,
   selectedIds,
   toggleSelection,
-  globalSettings
+  globalSettings,
+  updateVideoData // Distribute this to children
 }: VideoListProps) {
   
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
@@ -39,7 +42,7 @@ export default function VideoList({
     setExpandedFolders(newExpanded);
   };
 
-  // 1. LOADING STATE (The "Studio Initialization" view)
+  // 1. LOADING STATE
   if (isLoading) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-center p-20 animate-in fade-in duration-500">
@@ -53,16 +56,11 @@ export default function VideoList({
         <p className="max-w-md text-sm text-gray-400 leading-relaxed">
           Scanning media library and synchronizing metadata. This may take a moment while we decrypt local streams and link existing subtitle files.
         </p>
-        <div className="mt-8 flex gap-1">
-          <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-bounce" style={{ animationDelay: '0ms' }} />
-          <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-bounce" style={{ animationDelay: '150ms' }} />
-          <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-bounce" style={{ animationDelay: '300ms' }} />
-        </div>
       </div>
     );
   }
 
-  // 2. EMPTY STATE (Only shown if NOT loading and videos.length is 0)
+  // 2. EMPTY STATE
   if (videos.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-center p-20 border-2 border-dashed border-white/5 rounded-3xl">
@@ -82,7 +80,7 @@ export default function VideoList({
         {videos.map((item) => (
           <div key={item.id} className="flex flex-col">
             {item.is_directory ? (
-              /* FOLDER ROW (Code remains the same as your source) */
+              /* FOLDER ROW */
               <div 
                 onClick={() => handleFolderClick(item.id, item.filePath)}
                 className="group flex items-center bg-white/[0.03] hover:bg-indigo-500/10 rounded-xl transition-all pr-4 py-4 my-1 cursor-pointer border border-white/5 shadow-sm"
@@ -107,7 +105,7 @@ export default function VideoList({
                 </span>
               </div>
             ) : (
-              /* VIDEO ROW (Code remains the same as your source) */
+              /* VIDEO ROW */
               <div className="flex items-center group bg-white/[0.02] hover:bg-white/[0.04] rounded-2xl transition-colors pr-2">
                 <div className="pl-4 pr-2">
                   <input 
@@ -125,7 +123,7 @@ export default function VideoList({
                     video={item} 
                     onStart={onStartJob}
                     onCancel={onCancelJob}
-                    onNavigate={onNavigate}
+                    updateVideoData={updateVideoData} // Pass the updater here
                     globalSettings={globalSettings}
                   />
                 </div>
@@ -137,13 +135,14 @@ export default function VideoList({
                <div className="ml-8 mt-1 border-l-2 border-white/5 pl-4 space-y-2">
                   <VideoList 
                     videos={item.children}
-                    isLoading={false} // Don't show global loader in subfolders
+                    isLoading={false} 
                     onStartJob={onStartJob}
                     onCancelJob={onCancelJob}
                     onNavigate={onNavigate}
                     selectedIds={selectedIds}
                     toggleSelection={toggleSelection}
                     globalSettings={globalSettings}
+                    updateVideoData={updateVideoData} // Pass updater through levels
                   />
                </div>
             )}

@@ -43,8 +43,6 @@ The suite is fully containerized, leveraging **Docker Compose** to manage the fr
 │   │   ├── transcriber.py
 │   │   ├── translator.py
 │   │   └── __init__.py
-│   ├── database/
-│   ├── data/
 │   ├── Dockerfile
 │   ├── main.py
 │   └── requirements.txt
