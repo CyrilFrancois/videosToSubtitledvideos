@@ -1,33 +1,12 @@
 # 🎬 SubStudio: Local Processing Studio
 
-**SubStudio** is a professional-grade, AI-powered media pipeline designed for automated subtitle generation, context-aware translation, and intelligent MKV muxing. It transforms raw video files into fully accessible media using local Whisper models and GPT-4 intelligence.
+**SubStudio** is a professional-grade, AI-powered media pipeline designed for automated subtitle generation, context-aware translation, and intelligent MKV muxing. It transforms raw video files into fully accessible media using local Whisper models and LLM intelligence.
 
 ---
 
-## ✨ Key Features
+## 🏗️ Architecture & Communication
 
-* **Studio Dashboard:** A persistent "System Monitor" provides real-time progress of batch jobs, processor status (Idle/Busy), and file completion counts.
-* **Recursive Discovery:** High-speed scanning of local directories to identify videos and existing sidecar subtitle files.
-* **Intelligent Subtitle Heuristics:** * Detects internal MKV/MP4 tracks and external `.srt` files.
-    * Handles nested structures (e.g., `subs/video_name/lang.srt`).
-    * Automatically identifies the most complete SDH tracks based on file weight and duration.
-* **AI Pipeline:** * **Whisper:** Local speech-to-text for high-accuracy audio transcription.
-    * **GPT-4 Translation:** Context-aware translation that preserves tone and character nuances using metadata-driven prompts.
-* **Smart Muxing:** Final output as `.mkv` with correctly tagged language tracks and "default" flags, with optional "Studio Cleanup" to remove original source files.
-
----
-
-## 🏗️ Architecture
-
-The suite is fully containerized, leveraging **Docker Compose** to manage the frontend, backend, and heavy-duty dependencies like FFmpeg and CUDA drivers.
-
-| Service | Technology | Responsibility |
-| :--- | :--- | :--- |
-| **Frontend** | Next.js / Tailwind CSS | Interactive Dashboard, Batch Control, Real-time Logs (SSE). |
-| **Backend** | FastAPI (Python) | Transcription Engine, FFmpeg Orchestration, GPT Integration. |
-| **Storage** | Docker Volumes | Shared mount for the local media library (`/data`). |
-
----
+SubStudio operates on a **decoupled Client-Server model** optimized for high-throughput media processing. The frontend manages orchestration and user state, while the backend handles heavy-duty audio extraction, transcription, and muxing.
 
 ## 📂 Project Structure
 
@@ -37,6 +16,7 @@ The suite is fully containerized, leveraging **Docker Compose** to manage the fr
 .
 ├── backend/
 │   ├── core/
+│   │   ├── events.py
 │   │   ├── muxer.py
 │   │   ├── scanner.py
 │   │   ├── subtitle_processor.py
@@ -83,3 +63,37 @@ The suite is fully containerized, leveraging **Docker Compose** to manage the fr
 ├── readme.md
 └── TODELETE.md
 ```
+
+
+### Data Exchange Flow
+To keep the UI responsive during CPU/GPU intensive tasks, the system uses three communication layers:
+
+1. **REST API (HTTP):** Standard request/response for folder scanning, job initialization, and manual file uploads.
+2. **Server-Sent Events (SSE):** A one-way real-time stream from Backend to Frontend for progress percentages, status changes, and terminal logs.
+3. **Shared Volume (File System):** Both services mount `/data`. The backend processes files in-place or creates temporary sidecar files that the frontend can reference via path.
+
+---
+
+## 📡 API Contracts & Data Formats
+
+### 1. Folder Discovery (GET `/scan`)
+Triggered on dashboard load or manual refresh. The backend performs a recursive walk and returns a tree structure.
+
+**Response Schema:**
+```json
+{
+  "files": [
+    {
+      "fileName": "movie.mp4",
+      "filePath": "/data/movies/movie.mp4",
+      "is_directory": false,
+      "subtitleInfo": {
+        "hasSubtitles": true,
+        "subType": "external", 
+        "srtPath": "/data/movies/movie.srt",
+        "languages": ["en"],
+        "count": 1
+      }
+    }
+  ]
+}

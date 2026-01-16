@@ -1,12 +1,20 @@
+# Web Server & API
 fastapi
-uvicorn
+uvicorn[standard]
 python-multipart
-openai-whisper
-ffmpeg-python
-openai
-python-dotenv
 pydantic
-asyncio
+pydantic-settings
+
+# AI & Transcription
+openai-whisper
+openai
 torch
-torchvision
 torchaudio
+torchvision
+
+# Media Processing
+ffmpeg-python
+
+# System & Utilities
+python-dotenv
+httpx

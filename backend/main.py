@@ -1,198 +1,212 @@
 import asyncio
 import os
+import signal
+import logging
+import json
 import shutil
-from fastapi import FastAPI, BackgroundTasks, HTTPException, WebSocket, WebSocketDisconnect, Query, File, UploadFile, Form
+from fastapi import FastAPI, BackgroundTasks, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict
 from pathlib import Path
 
-# Import custom modules
+# Import Core Services
 from core.scanner import VideoScanner
-from core.transcriber import VideoTranscriber
 from core.subtitle_processor import SubtitleProcessor
+from core.transcriber import VideoTranscriber
 from core.translator import SubtitleTranslator
 from core.muxer import VideoMuxer
+from core.events import event_manager
 
-# --- 1. DEFINE DATA MODELS ---
+# --- LOGGING ---
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logger = logging.getLogger("SubStudio")
+
+# --- DATA MODELS ---
+class VideoJob(BaseModel):
+    name: str
+    path: str
+    srtFoundPath: Optional[str] = "None"
+    src: str = "auto"
+    out: List[str] = ["fr"]
+    workflowMode: str = "hybrid"
+    syncOffset: int = 0
+
+class GlobalOptions(BaseModel):
+    transcriptionEngine: str = "base"
+    generateSRT: bool = True
+    muxIntoMkv: bool = True
+    cleanUp: bool = False
+
 class ProcessRequest(BaseModel):
-    fileIds: List[str]
-    sourceLang: Optional[str] = "auto"
-    targetLanguages: List[str] = ["fr"]
-    workflowMode: str = "hybrid"  # "hybrid" or "force_ai"
-    shouldRemoveOriginal: bool = False
-    shouldMux: bool = True
-    modelSize: str = "base"
+    videos: List[VideoJob]
+    globalOptions: GlobalOptions
 
-# --- 2. INITIALIZATION ---
-app = FastAPI()
+# --- TASK MANAGER ---
+class TaskManager:
+    def __init__(self):
+        self.active_pid: Optional[int] = None
+        self.is_aborted: bool = False
+        self.queue: List[VideoJob] = []
+        self.current_fid: Optional[str] = None
+        self.artifacts: List[str] = []
 
-# Configure CORS for Next.js frontend
+    def register_artifact(self, path: str):
+        if path and path not in self.artifacts:
+            self.artifacts.append(path)
+            logger.info(f"📍 Registered artifact: {path}")
+
+    def abort_all(self):
+        logger.warning("🚨 [ABORT] Stop signal received.")
+        self.is_aborted = True
+        self.queue = []
+        if self.active_pid:
+            try:
+                os.kill(self.active_pid, signal.SIGTERM)
+                logger.info(f"💀 Killed PID: {self.active_pid}")
+            except Exception as e:
+                logger.error(f"Failed to kill PID {self.active_pid}: {e}")
+        self.cleanup_artifacts()
+
+    def cleanup_artifacts(self):
+        for path in self.artifacts:
+            if os.path.exists(path):
+                try:
+                    os.remove(path)
+                    logger.info(f"🧹 Cleaned up artifact: {path}")
+                except: pass
+        self.artifacts = []
+
+# --- INITIALIZATION ---
+app = FastAPI(title="SubStudio API")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
-    allow_credentials=True,
+    allow_origins=["*"],
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*"]
 )
 
-# Initialize scanner with the base path
+task_manager = TaskManager()
 scanner = VideoScanner(base_path="/data")
-
-# Event Manager setup
-try:
-    from core.events import event_manager
-except ImportError:
-    class MockEventManager:
-        def emit(self, fid, status, progress, msg): 
-            print(f"[{fid}] {status} ({progress}%): {msg}")
-    event_manager = MockEventManager()
-
-# Initialize Engine Components
-transcriber = VideoTranscriber(model_size="base")
-translator = SubtitleTranslator() 
-muxer = VideoMuxer()
 processor = SubtitleProcessor()
+transcriber = VideoTranscriber(model_size="base")
+translator = SubtitleTranslator()
+muxer = VideoMuxer()
 
-# In-Memory Cache for files found during scan
-active_files_cache = {}
+# --- PIPELINE EXECUTION ---
+async def run_linear_pipeline(request: ProcessRequest):
+    task_manager.is_aborted = False
+    task_manager.queue = request.videos
+    opts = request.globalOptions
 
-# --- 3. PIPELINE LOGIC ---
-async def run_pipeline(file_ids: List[str], settings: ProcessRequest):
-    for fid in file_ids:
-        video = active_files_cache.get(fid)
-        if not video:
-            event_manager.emit(fid, "error", 0, "File not found in session cache. Please re-scan.")
-            continue
+    while task_manager.queue:
+        if task_manager.is_aborted:
+            break
+
+        video = task_manager.queue.pop(0)
+        fid = video.path 
+        task_manager.current_fid = fid
 
         try:
-            video_path = video['filePath']
-            sub_info = video.get('subtitleInfo', {})
-            srt_content = ""
+            logger.info(f"🎬 [STARTING] {video.name}")
             
-            # --- PHASE 1: SUBTITLE ACQUISITION ---
-            if settings.workflowMode == "hybrid" and sub_info.get("hasSubtitles"):
-                event_manager.emit(fid, "processing", 10, f"Loading detected {sub_info.get('subType')} subtitles...")
-                srt_content = processor.load_existing_subtitles(video)
-                
-                if not srt_content:
-                    event_manager.emit(fid, "processing", 15, "Existing subtitles unreadable. Falling back to AI...")
-                    srt_content = transcriber.transcribe(video_path, fid, event_manager.emit)
-            else:
-                event_manager.emit(fid, "processing", 10, f"AI Transcribing with Whisper ({settings.modelSize})...")
-                srt_content = transcriber.transcribe(video_path, fid, event_manager.emit)
+            # PHASE 0: Context
+            event_manager.emit(fid, "processing", 5, "Initializing Story Bible...")
+            context_bible = translator.get_context_profile(video.name)
 
-            if not srt_content:
-                raise Exception("Failed to acquire source subtitles.")
+            # PHASE 1: Text Acquisition
+            srt_content = ""
+            is_whisper = False
 
-            # --- PHASE 2: TRANSLATION ---
-            translated_srts = {}
-            for i, lang in enumerate(settings.targetLanguages):
-                progress = 40 + int((i / len(settings.targetLanguages)) * 30)
-                event_manager.emit(fid, "processing", progress, f"Translating to {lang.upper()}...")
-                translated_srts[lang] = translator.translate(srt_content, lang)
+            # Logical check for Workflow
+            if video.workflowMode == "srt" and video.srtFoundPath and os.path.exists(video.srtFoundPath):
+                logger.info(f"📂 [SOURCE] Using local SRT: {video.srtFoundPath}")
+                event_manager.emit(fid, "processing", 10, "Loading local SRT file...")
+                with open(video.srtFoundPath, 'r', encoding='utf-8') as f:
+                    srt_content = f.read()
+            
+            if not srt_content or video.workflowMode == "whisper":
+                logger.info(f"🎙️ [SOURCE] Running AI Transcription")
+                event_manager.emit(fid, "processing", 15, f"AI Transcribing ({opts.transcriptionEngine})...")
+                srt_content = transcriber.transcribe(video.path, fid, event_manager.emit, task_manager)
+                is_whisper = True
 
-            # --- PHASE 3: MUXING / EXPORT ---
-            if settings.shouldMux:
-                event_manager.emit(fid, "processing", 85, "Muxing final video container...")
-                output_path = muxer.mux(video_path, translated_srts)
-                event_manager.emit(fid, "done", 100, f"Success! Output: {os.path.basename(output_path)}")
-            else:
-                event_manager.emit(fid, "processing", 90, "Saving external SRT files...")
-                event_manager.emit(fid, "done", 100, "Success! Sidecar SRTs created.")
+            if task_manager.is_aborted: break
+
+            # PHASE 2 & 3: Translation
+            translated_map = {}
+            for lang in video.out:
+                event_manager.emit(fid, "translating", 40, f"Translating to {lang.upper()}...")
+                translated_map[lang] = translator.refine_and_translate(
+                    srt_content, lang, fid, event_manager.emit, task_manager, context_bible, is_whisper
+                )
+
+            # PHASE 4: Export & Muxing
+            # 4a. Handle "Generate SRT" (Naming: VideoName.fr.srt)
+            if opts.generateSRT:
+                for lang, content in translated_map.items():
+                    # Requirement: Same name as video + .[lang].srt
+                    srt_export_path = f"{os.path.splitext(video.path)[0]}.{lang}.srt"
+                    with open(srt_export_path, "w", encoding="utf-8") as f:
+                        f.write(content)
+                    logger.info(f"💾 [EXPORT] SRT created: {os.path.basename(srt_export_path)}")
+
+            # 4b. Muxing logic
+            if opts.muxIntoMkv and not task_manager.is_aborted:
+                event_manager.emit(fid, "muxing", 85, "Muxing into final MKV...")
+                # Pass cleanUp flag to muxer to handle _SubStudio suffix vs original replacement
+                muxer.mux(
+                    video_path=video.path,
+                    translated_srts=translated_map,
+                    file_id=fid,
+                    on_progress=event_manager.emit,
+                    task_manager=task_manager,
+                    cleanup_original=opts.cleanUp
+                )
+
+            event_manager.emit(fid, "done", 100, "Successfully completed!")
+            logger.info(f"✅ [FINISHED] {video.name}")
             
         except Exception as e:
-            event_manager.emit(fid, "error", 0, f"Pipeline Error: {str(e)}")
+            logger.error(f"❌ [PIPELINE ERROR] {fid}: {str(e)}")
+            event_manager.emit(fid, "error", 0, f"Error: {str(e)}")
+        finally:
+            task_manager.artifacts = []
 
-# --- 4. API ENDPOINTS ---
+    task_manager.current_fid = None
+
+# --- API ENDPOINTS ---
 
 @app.get("/api/scan")
 async def scan_library(target_path: str = Query("/data")):
-    # Security: Ensure we stay within the data mount
-    if not target_path.startswith("/data"):
-        target_path = "/data"
-        
-    if not os.path.exists(target_path):
-        raise HTTPException(status_code=404, detail=f"Path {target_path} not found")
-
+    logger.info(f"🔍 Scanning folder: {target_path}")
     items = scanner.scan(target_path=target_path, recursive=True)
-    
-    def update_cache_recursive(nodes):
-        for node in nodes:
-            if not node.get('is_directory'):
-                active_files_cache[node['id']] = node
-            elif node.get('children'):
-                update_cache_recursive(node['children'])
-
-    update_cache_recursive(items)
-    
-    return {
-        "status": "success",
-        "currentPath": target_path, 
-        "files": items
-    }
-
-@app.post("/api/subtitles/upload")
-async def upload_subtitle(
-    file: UploadFile = File(...),
-    targetName: str = Form(...),
-    destinationPath: str = Form(...)
-):
-    """
-    Receives an SRT file and saves it in the specified directory.
-    If the file exists, appends _1, _2, etc.
-    """
-    try:
-        # Security: Validation
-        if not destinationPath.startswith("/data"):
-            raise HTTPException(status_code=403, detail="Forbidden: Path must be within /data")
-        
-        if not os.path.exists(destinationPath):
-            raise HTTPException(status_code=404, detail="Destination directory does not exist")
-
-        # File Naming Logic
-        base, ext = os.path.splitext(targetName)
-        final_file_path = os.path.join(destinationPath, targetName)
-        
-        counter = 1
-        while os.path.exists(final_file_path):
-            final_file_path = os.path.join(destinationPath, f"{base}_{counter}{ext}")
-            counter += 1
-
-        # Save File
-        with open(final_file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-
-        return {
-            "status": "success",
-            "savedPath": final_file_path,
-            "fileName": os.path.basename(final_file_path)
-        }
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+    return {"files": items}
 
 @app.post("/api/process")
 async def start_processing(request: ProcessRequest, background_tasks: BackgroundTasks):
-    if not request.fileIds:
-        raise HTTPException(status_code=400, detail="No file IDs provided")
+    # Log incoming request for debugging
+    logger.info(f"📥 [RECEIVED] Process request for {len(request.videos)} videos")
+
+    if task_manager.current_fid and not task_manager.is_aborted:
+        task_manager.queue.extend(request.videos)
+        for v in request.videos:
+            event_manager.emit(v.path, "queued", 0, "Waiting in queue...")
+        return {"status": "queued", "count": len(request.videos)}
     
-    background_tasks.add_task(run_pipeline, request.fileIds, request)
-    return {"status": "started", "count": len(request.fileIds)}
+    background_tasks.add_task(run_linear_pipeline, request)
+    return {"status": "started", "video_count": len(request.videos)}
 
-@app.websocket("/ws/status")
-async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
-    try:
-        while True:
-            await websocket.receive_text()
-    except WebSocketDisconnect:
-        pass
+@app.post("/api/abort")
+async def abort_jobs():
+    task_manager.abort_all()
+    return {"status": "aborted"}
 
-@app.delete("/api/cancel/{file_id}")
-async def cancel_job(file_id: str):
-    return {"status": "cancelled", "id": file_id}
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+@app.get("/api/events/{file_id:path}")
+async def sse_endpoint(file_id: str):
+    return StreamingResponse(
+        event_manager.subscribe(file_id),
+        media_type="text/event-stream"
+    )

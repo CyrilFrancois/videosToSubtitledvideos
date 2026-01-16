@@ -2,12 +2,11 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 /**
  * API Service Layer
- * Updated to handle Smart Subtitle Detection metadata, 
- * Hybrid Workflow settings, and Manual Subtitle Uploads.
+ * Updated to support the rich JSON payload and direct "startJob" naming.
  */
 export const api = {
   // 1. Fetch directory structure
-  async scanFolder(path: string = "/data", recursive: boolean = true) {
+  async scanFolder(path: string = "/data") {
     const url = `${API_BASE_URL}/api/scan?target_path=${encodeURIComponent(path)}`;
     
     const response = await fetch(url, {
@@ -23,20 +22,14 @@ export const api = {
     return response.json();
   },
 
-  // 2. Start processing with Enhanced Settings
-  async startProcessing(fileIds: string[], globalSettings: any) {
+  /**
+   * 2. The New Start Job
+   * This matches the call in page.tsx: api.startJob(payload)
+   * Receives the "perfect" payload directly.
+   */
+  async startJob(payload: any) {
     const url = `${API_BASE_URL}/api/process`;
     
-    const payload = {
-      fileIds,
-      sourceLang: globalSettings.sourceLang?.[0] || "auto",
-      targetLanguages: globalSettings.targetLanguages || ["fr"],
-      workflowMode: globalSettings.workflowMode || "hybrid",
-      shouldRemoveOriginal: globalSettings.shouldRemoveOriginal || false,
-      shouldMux: true, 
-      modelSize: "base" 
-    };
-
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -44,31 +37,36 @@ export const api = {
     });
 
     if (!response.ok) {
-      throw new Error('Failed to start AI processing pipeline');
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || 'Failed to start the processing job');
     }
 
     return response.json();
   },
 
-  // 3. Cancel a running job
-  async cancelJob(fileId: string) {
-    const url = `${API_BASE_URL}/api/cancel/${encodeURIComponent(fileId)}`;
+  // 3. Global Kill Switch: Abort the entire queue
+  async abortAll() {
+    const url = `${API_BASE_URL}/api/abort`;
     
     const response = await fetch(url, { 
-      method: 'DELETE' 
+      method: 'POST' 
     });
 
     if (!response.ok) {
-      throw new Error('Failed to cancel the requested job');
+      throw new Error('Failed to trigger global abort');
     }
 
     return response.json();
   },
 
-  /**
-   * 4. Upload External Subtitle
-   * Sends the .srt file to the Python backend to be saved next to the video.
-   */
+  // 4. Cancel/Abort proxy (Used by VideoList components)
+  async cancelJob(fileId: string) {
+    // Currently, we use the global abort for simplicity, 
+    // or you can implement a specific delete route in FastAPI.
+    return this.abortAll();
+  },
+
+  // 5. Upload External Subtitle
   async uploadSubtitle(file: File, targetName: string, destinationPath: string) {
     const url = `${API_BASE_URL}/api/subtitles/upload`;
     
@@ -79,8 +77,6 @@ export const api = {
 
     const response = await fetch(url, {
       method: 'POST',
-      // Note: Do NOT set Content-Type header when sending FormData; 
-      // the browser will automatically set it to 'multipart/form-data' with the correct boundary.
       body: formData,
     });
 
@@ -93,5 +89,5 @@ export const api = {
   }
 };
 
-// Export individual function for compatibility with the VideoCard.tsx import
-export const uploadSubtitle = api.uploadSubtitle;
+// Ensure individual exports match the new method names
+export const { uploadSubtitle, startJob, abortAll, cancelJob, scanFolder } = api;
