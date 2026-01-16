@@ -96,10 +96,25 @@ export default function Sidebar({
 
   return (
     <aside className="w-80 bg-[#0a0a0a] border-r border-white/10 flex flex-col p-6 z-20 h-full overflow-y-auto custom-scrollbar">
-      <div className="mb-10">
-        <h1 className="text-xl font-bold text-white uppercase tracking-tighter">
-          SubStudio <span className="text-indigo-500 text-xs block opacity-70 mt-1">Local Processing Studio</span>
-        </h1>
+      {/* BRANDING HEADER WITH LARGER LOGO */}
+      <div className="mb-10 flex items-end justify-between">
+        <div>
+          <h1 className="text-2xl font-black text-white uppercase tracking-tighter leading-none">
+            SubStudio
+          </h1>
+          <span className="text-indigo-500 text-[11px] block font-bold opacity-80 tracking-widest uppercase mt-2">
+            Local Processing Studio
+          </span>
+        </div>
+        
+        {/* LOGO IMAGE - DOUBLED SIZE (h-16) */}
+        <div className="flex-shrink-0 ml-4">
+          <img 
+            src="/logo.png" 
+            alt="SubStudio Logo" 
+            className="h-16 w-auto object-contain brightness-110 drop-shadow-[0_0_15px_rgba(99,102,241,0.3)]"
+          />
+        </div>
       </div>
 
       <div className="space-y-8 flex-1">

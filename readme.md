@@ -1,124 +1,87 @@
-# 🎬 AI Video Suite: Transcribe, Translate & Mux
+# 🎬 SubStudio: Local Processing Studio
 
-A professional-grade media pipeline for automated subtitle generation, AI-powered translation (GPT-4), and smart MKV muxing. This application handles complex subtitle folder structures, audio-to-subtitle synchronization, and recursive folder processing.
+**SubStudio** is a professional-grade, AI-powered media pipeline designed for automated subtitle generation, context-aware translation, and intelligent MKV muxing. It transforms raw video files into fully accessible media using local Whisper models and GPT-4 intelligence.
 
-
+---
 
 ## ✨ Key Features
 
-* **Recursive Discovery:** Scan single files, specific folders, or entire directory trees.
-* **Intelligent Subtitle Search:** * Internal streams (MKV/MP4 tracks).
-    * Sidecar files (`video.srt`).
-    * Nested structures (`subs/video_name/lang.srt`).
-    * **Heuristic Selection:** Automatically picks the most complete (SDH) subtitle based on file weight and duration.
-* **AI Pipeline:** * **Whisper:** Local speech-to-text for audio detection and transcription.
-    * **GPT-4:** Context-aware translation using show/movie metadata for superior accuracy.
-* **Sync Engine:** Adjusts external unsynchronized subtitles to match the audio track or existing internal transcription.
-* **Clean Muxing:** Final output as `.mkv` with correctly tagged language tracks and "default" flags.
+* **Studio Dashboard:** A persistent "System Monitor" provides real-time progress of batch jobs, processor status (Idle/Busy), and file completion counts.
+* **Recursive Discovery:** High-speed scanning of local directories to identify videos and existing sidecar subtitle files.
+* **Intelligent Subtitle Heuristics:** * Detects internal MKV/MP4 tracks and external `.srt` files.
+    * Handles nested structures (e.g., `subs/video_name/lang.srt`).
+    * Automatically identifies the most complete SDH tracks based on file weight and duration.
+* **AI Pipeline:** * **Whisper:** Local speech-to-text for high-accuracy audio transcription.
+    * **GPT-4 Translation:** Context-aware translation that preserves tone and character nuances using metadata-driven prompts.
+* **Smart Muxing:** Final output as `.mkv` with correctly tagged language tracks and "default" flags, with optional "Studio Cleanup" to remove original source files.
 
 ---
 
 ## 🏗️ Architecture
 
-The app is containerized using **Docker Compose** to manage dependencies like FFmpeg and CUDA drivers.
+The suite is fully containerized, leveraging **Docker Compose** to manage the frontend, backend, and heavy-duty dependencies like FFmpeg and CUDA drivers.
 
 | Service | Technology | Responsibility |
 | :--- | :--- | :--- |
-| **Frontend** | Next.js / TypeScript | Interactive dashboard, File Explorer, Real-time Logs (SSE). |
-| **Backend** | FastAPI (Python) | AI Engine, File Scanner, FFmpeg Muxer, GPT Integration. |
-| **Storage** | Docker Volumes | Shared access to your local media library. |
+| **Frontend** | Next.js / Tailwind CSS | Interactive Dashboard, Batch Control, Real-time Logs (SSE). |
+| **Backend** | FastAPI (Python) | Transcription Engine, FFmpeg Orchestration, GPT Integration. |
+| **Storage** | Docker Volumes | Shared mount for the local media library (`/data`). |
 
 ---
 
 ## 📂 Project Structure
 
 ```text
-videosToSubtitledvideos/
-├── .env
-├── docker-compose.yml
-├── readme.md
-├── TODELETE.md
-├── data/                       # Root media folder
+# SubStudio Project Structure
+
+.
 ├── backend/
 │   ├── core/
-│   │   ├── __init__.py
 │   │   ├── muxer.py
 │   │   ├── scanner.py
+│   │   ├── subtitle_processor.py
 │   │   ├── transcriber.py
-│   │   └── translator.py 
-│   │   └── subtitle_processor.py
-│   ├── data/
+│   │   ├── translator.py
+│   │   └── __init__.py
 │   ├── database/
-│   ├── main.py
+│   ├── data/
 │   ├── Dockerfile
+│   ├── main.py
 │   └── requirements.txt
-└── frontend/
-    ├── src/
-    │   ├── app/
-    │   │   ├── globals.css
-    │   │   ├── layout.tsx
-    │   │   └── page.tsx        # Main dashboard entry
-    │   ├── components/
-    │   │   ├── dashboard/
-    │   │   │   ├── GlobalProgress.tsx
-    │   │   │   ├── SubImportModal.tsx
-    │   │   │   ├── VideoCard.tsx
-    │   │   │   └── VideoList.tsx
-    │   │   └── layout/
-    │   │       └── Sidebar.tsx
-    │   ├── hooks/
-    │   │   └── useSocket.ts
-    │   └── lib/
-    │       ├── api.ts
-    │       ├── sse.ts
-    │       └── types.ts 
-    ├── Dockerfile
-    ├── next-env.d.ts
-    ├── package.json
-    ├── postcss.config.js
-    ├── tailwind.config.ts
-    └── tsconfig.json
+├── data/                      # Shared media volume
+├── frontend/
+│   ├── src/
+│   │   ├── app/
+│   │   │   ├── globals.css
+│   │   │   ├── layout.tsx
+│   │   │   └── page.tsx
+│   │   ├── components/
+│   │   │   ├── dashboard/
+│   │   │   │   ├── GlobalProgress.tsx
+│   │   │   │   ├── SubImportModal.tsx
+│   │   │   │   ├── videoCard.tsx
+│   │   │   │   └── VideoList.tsx
+│   │   │   └── layout/
+│   │   │       └── Sidebar.tsx
+│   │   ├── hooks/
+│   │   │   └── useSocket.ts
+│   │   ├── lib/
+│   │   │   ├── api.ts
+│   │   │   ├── sse.ts
+│   │   │   └── types.ts
+│   │   ├── public/
+│   │   │   └── logo.png
+│   ├── Dockerfile
+│   ├── next-env.d.ts
+│   ├── package.json
+│   ├── postcss.config.js
+│   ├── tailwind.config.ts
+│   └── tsconfig.json
+├── ressources/
+│   └── logo.png               # Brand Assets
+├── .env                       # Environment Variables
+├── .gitignore
+├── docker-compose.yml         # Orchestration
+├── readme.md
+└── TODELETE.md
 ```
-
----
-
-## 🚀 Getting Started
-
-### 1. Prerequisites
-* **Docker & Docker Compose** installed.
-* **NVIDIA Container Toolkit** (Optional, for GPU acceleration).
-* **OpenAI API Key** (For context-aware translation).
-
-### 2. Configuration
-Create a `.env` file in the root directory:
-```env
-OPENAI_API_KEY=your_key_here
-NEXT_PUBLIC_MEDIA_PATH=./data
-WHISPER_MODEL=base  # tiny, base, small, medium, large
-```
-
-### 3. Deployment
-```bash
-docker-compose up --build
-docker-compose up
-```
-The application will be available at:
-* **Frontend:** `http://localhost:3000`
-* **Backend API:** `http://localhost:8000/docs`
-
----
-
-## ⚙️ Logic Workflow
-
-1.  **Detection:** User selects a root folder. The `Scanner` identifies every video and probes for existing audio/subtitle tracks.
-2.  **Selection:** User picks target languages (e.g., English -> French/Japanese).
-3.  **Synchronization (If needed):** If external subtitles are chosen, the engine compares their timestamps with the audio waveform to fix offsets.
-4.  **Translation:** Subtitles are chunked and sent to GPT-4 with "System Prompts" derived from movie metadata to maintain tone.
-5.  **Finalization:** FFmpeg muxes all chosen streams into a new `.mkv` file, preserving quality while organizing tracks.
-
----
-
-## 🗺️ Roadmap
-- [ ] Auto-sync via Cross-Correlation of audio waveforms.
-- [ ] TMDB API integration for automatic show metadata.
-- [ ] User-defined "Translation Glossary" for specific terminology.
