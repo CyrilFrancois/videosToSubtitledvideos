@@ -98,7 +98,7 @@ export default function Sidebar({
     <aside className="w-80 bg-[#0a0a0a] border-r border-white/10 flex flex-col p-6 z-20 h-full overflow-y-auto custom-scrollbar">
       <div className="mb-10">
         <h1 className="text-xl font-bold text-white uppercase tracking-tighter">
-          LEXI-STREAM <span className="text-indigo-500 text-xs block opacity-70">AI Auto-Sub</span>
+          SubStudio <span className="text-indigo-500 text-xs block opacity-70">The Local Standard for Video Transcription.</span>
         </h1>
       </div>
 

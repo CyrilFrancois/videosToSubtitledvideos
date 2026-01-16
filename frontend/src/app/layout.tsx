@@ -4,7 +4,7 @@ import './globals.css';
 // const inter = Inter({ subsets: ['latin'] }); // Comment this out
 
 export const metadata = {
-  title: 'AI Media Suite',
+  title: 'SubStudio',
   description: 'Automated video transcription and translation',
 };
 

@@ -26,7 +26,6 @@ export default function SubImportModal({ isOpen, onClose, videoName, videoPath, 
 
   const processFile = (file: File) => {
     if (file.name.endsWith('.srt')) {
-      // Pass the file, the ideal name, and the folder path to the parent handler
       onFileSelect(file, `${baseName}.srt`, videoPath);
     } else {
       alert("Please upload a valid .srt file");
@@ -42,22 +41,39 @@ export default function SubImportModal({ isOpen, onClose, videoName, videoPath, 
     }
   }, [baseName, videoPath]);
 
+  /**
+   * Enhanced Search Logic
+   * Cleans alphanumeric characters and formats URLs per provider
+   */
   const openSearch = (provider: 'subdl' | 'yts' | 'opensubs') => {
-    const query = encodeURIComponent(baseName);
+    // 1. Clean string: Replace non-alphanumeric (dots, dashes) with spaces
+    const cleanBase = baseName.replace(/[^a-z0-9]/gi, ' ').trim();
+    
+    // 2. Refine spaces for standard providers (SubDL, YTS)
+    const spaceQuery = cleanBase.replace(/\s+/g, ' '); 
+    
+    // 3. Refine for OpenSubtitles (requires '+')
+    const plusQuery = spaceQuery.replace(/\s+/g, '+');
+
     let url = '';
     
     switch(provider) {
       case 'subdl':
-        url = `https://subdl.com/search?q=${query}`;
+        url = `https://subdl.com/search/${encodeURIComponent(spaceQuery)}`;
         break;
+        
       case 'yts':
-        url = `https://yts-subs.com/search/${query}`;
+        url = `https://yts-subs.com/search/${encodeURIComponent(spaceQuery)}`;
         break;
+        
       case 'opensubs':
-        url = `https://www.opensubtitles.com/en/all/search-movie/query-${query}`;
+        url = `https://www.opensubtitles.com/en/en/search-all/q-${plusQuery}/hearing_impaired-include/machine_translated-/trusted_sources-`;
         break;
     }
-    window.open(url, '_blank');
+
+    if (url) {
+      window.open(url, '_blank');
+    }
   };
 
   if (!isOpen) return null;
@@ -129,6 +145,19 @@ export default function SubImportModal({ isOpen, onClose, videoName, videoPath, 
           {/* Multi-Provider Search Buttons */}
           <div className="space-y-2">
             <button 
+              onClick={() => openSearch('opensubs')}
+              className="w-full group flex items-center justify-between p-3 bg-white/[0.01] border border-white/5 rounded-xl hover:border-orange-500/50 transition-all hover:bg-white/[0.03]"
+            >
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-orange-500/10 rounded-lg text-orange-400 group-hover:bg-orange-500 group-hover:text-white transition-all">
+                  <Globe size={16} />
+                </div>
+                <p className="text-xs font-bold text-gray-300">Search on OpenSubtitles</p>
+              </div>
+              <Search size={14} className="text-gray-600 group-hover:text-orange-400" />
+            </button>
+            
+            <button 
               onClick={() => openSearch('subdl')}
               className="w-full group flex items-center justify-between p-3 bg-white/[0.01] border border-white/5 rounded-xl hover:border-indigo-500/50 transition-all hover:bg-white/[0.03]"
             >
@@ -152,19 +181,6 @@ export default function SubImportModal({ isOpen, onClose, videoName, videoPath, 
                 <p className="text-xs font-bold text-gray-300">Search on YTS-Subs</p>
               </div>
               <Search size={14} className="text-gray-600 group-hover:text-emerald-400" />
-            </button>
-
-            <button 
-              onClick={() => openSearch('opensubs')}
-              className="w-full group flex items-center justify-between p-3 bg-white/[0.01] border border-white/5 rounded-xl hover:border-orange-500/50 transition-all hover:bg-white/[0.03]"
-            >
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-orange-500/10 rounded-lg text-orange-400 group-hover:bg-orange-500 group-hover:text-white transition-all">
-                  <Globe size={16} />
-                </div>
-                <p className="text-xs font-bold text-gray-300">Search on OpenSubtitles</p>
-              </div>
-              <Search size={14} className="text-gray-600 group-hover:text-orange-400" />
             </button>
           </div>
         </div>
