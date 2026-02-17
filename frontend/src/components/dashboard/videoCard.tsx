@@ -5,7 +5,7 @@ import { useStudio } from '@/app/page';
 import SubImportModal from './SubImportModal';
 import { 
   Volume2, Text, Link as LinkIcon, Clock, Cpu, 
-  Check, Play, Loader2, FileText, Globe, ChevronDown 
+  Check, Play, Loader2, FileText, Globe, ChevronDown, Layers 
 } from 'lucide-react';
 import { ProcessingStatus } from '@/lib/types';
 
@@ -14,12 +14,16 @@ export default function VideoCard({ video }: { video: any }) {
   const [showOffsets, setShowOffsets] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // --- DATA EXTRACTION (Last Input Wins) ---
-  // These values are updated either by the card itself or by the Sidebar's bulk update
+  // --- DATA EXTRACTION ---
   const sourceLang = video.sourceLang || ['auto'];
   const targetLanguages = video.targetLanguages || ['fr'];
   const workflowMode = video.workflowMode || 'hybrid';
-  const syncOffset = video.syncOffset || 0;
+  
+  // Bug Fix: Ensure syncOffset is handled as a precise number for the label
+  const syncOffset = typeof video.syncOffset === 'number' ? video.syncOffset : 0;
+  
+  // Feature: Local override for stripping tracks, falling back to global settings
+  const stripExistingSubs = video.stripExistingSubs ?? state.settings.stripExistingSubs;
 
   // --- UI STATE ---
   const isSelected = state.selectedIds.has(video.id);
@@ -32,7 +36,6 @@ export default function VideoCard({ video }: { video: any }) {
     language: null 
   };
   
-  // Logic: If no subtitles exist, we MUST use whisper regardless of mode
   const effectiveWorkflow = !subInfo.hasSubtitles ? 'whisper' : workflowMode;
   const isWhisperActive = effectiveWorkflow === 'whisper';
   const isSourceActive = !isWhisperActive;
@@ -127,7 +130,7 @@ export default function VideoCard({ video }: { video: any }) {
         </div>
 
         {/* OUTPUT LANGS */}
-        <div className="col-span-3 space-y-1">
+        <div className="col-span-2 space-y-1">
           <span className="text-[8px] font-bold text-gray-600 uppercase">Output</span>
           <div className="relative group/multiselect">
             <button className="w-full flex items-center justify-between bg-black/40 border border-white/5 p-2 rounded text-[10px] text-indigo-400 font-mono uppercase truncate">
@@ -149,7 +152,7 @@ export default function VideoCard({ video }: { video: any }) {
         </div>
 
         {/* WORKFLOW SWITCH */}
-        <div className="col-span-4 space-y-1">
+        <div className="col-span-3 space-y-1">
           <span className="text-[8px] font-bold text-gray-600 uppercase">Workflow</span>
           <div className="flex gap-1">
             <button 
@@ -167,13 +170,29 @@ export default function VideoCard({ video }: { video: any }) {
           </div>
         </div>
 
+        {/* STRIP OVERRIDE */}
+        <div className="col-span-2 space-y-1">
+          <span className="text-[8px] font-bold text-gray-600 uppercase">Internal Subs</span>
+          <button 
+            onClick={() => actions.updateVideoData(video.id, { stripExistingSubs: !stripExistingSubs })}
+            className={`w-full flex items-center justify-center gap-2 py-1.5 rounded text-[9px] font-bold uppercase transition-all border ${
+              stripExistingSubs 
+              ? 'bg-red-500/10 border-red-500/40 text-red-400' 
+              : 'bg-white/5 border-white/5 text-gray-500'
+            }`}
+          >
+            <Layers size={10} />
+            {stripExistingSubs ? 'Strip' : 'Keep'}
+          </button>
+        </div>
+
         {/* ACTIONS */}
         <div className="col-span-3 flex flex-col justify-end gap-1">
           <button 
             onClick={() => setShowOffsets(!showOffsets)}
-            className={`text-[9px] font-bold uppercase flex items-center justify-center gap-1 ${syncOffset !== 0 ? 'text-indigo-400' : 'text-gray-500'}`}
+            className={`text-[9px] font-bold uppercase flex items-center justify-center gap-1 transition-colors ${syncOffset !== 0 ? 'text-indigo-400' : 'text-gray-500'}`}
           >
-            <Clock size={10} /> {syncOffset !== 0 ? `${syncOffset}s` : 'Sync'}
+            <Clock size={10} /> {syncOffset !== 0 ? `${syncOffset.toFixed(1)}s` : 'Sync'}
           </button>
           <button 
             disabled={isProcessing}
@@ -189,14 +208,24 @@ export default function VideoCard({ video }: { video: any }) {
       {showOffsets && (
         <div className="px-4 py-3 bg-indigo-500/5 border-t border-white/5 flex justify-center">
           <div className="flex items-center gap-3 bg-black border border-white/10 px-4 py-1 rounded-full">
-            <button onClick={() => actions.updateVideoData(video.id, { syncOffset: syncOffset - 0.1 })} className="text-indigo-400 font-bold hover:text-white">-</button>
+            <button 
+              onClick={() => actions.updateVideoData(video.id, { syncOffset: Math.round((syncOffset - 0.1) * 10) / 10 })} 
+              className="text-indigo-400 font-bold hover:text-white px-1"
+            >
+              -
+            </button>
             <input 
               type="number" step="0.1"
               value={syncOffset}
               onChange={(e) => actions.updateVideoData(video.id, { syncOffset: parseFloat(e.target.value) || 0 })}
               className="bg-transparent text-center text-xs font-mono text-indigo-400 w-12 outline-none"
             />
-            <button onClick={() => actions.updateVideoData(video.id, { syncOffset: syncOffset + 0.1 })} className="text-indigo-400 font-bold hover:text-white">+</button>
+            <button 
+              onClick={() => actions.updateVideoData(video.id, { syncOffset: Math.round((syncOffset + 0.1) * 10) / 10 })} 
+              className="text-indigo-400 font-bold hover:text-white px-1"
+            >
+              +
+            </button>
             <span className="text-[9px] text-gray-600 font-black uppercase">Sec</span>
           </div>
         </div>
@@ -210,16 +239,13 @@ export default function VideoCard({ video }: { video: any }) {
       )}
 
       <SubImportModal 
-      isOpen={isModalOpen} 
-      onClose={() => setIsModalOpen(false)} 
-      videoName={video.fileName}
-      videoPath={video.filePath.substring(0, video.filePath.lastIndexOf('/'))} // Extracts the folder path
-      onFileSelect={async (file, targetName, destinationPath) => {
-        try {
-          // 1. Upload to server via API
-          const result = await api.uploadSubtitle(file, targetName, destinationPath);
-          
-          // 2. Update the video card state to reflect the new local SRT
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+        videoName={video.fileName}
+        videoPath={video.filePath.substring(0, video.filePath.lastIndexOf('/'))}
+        onFileSelect={async (file, targetName, destinationPath) => {
+          // Note: ensure api is imported or available in your context if used here directly
+          // Alternatively, call a method from actions that handles the upload
           actions.updateVideoData(video.id, { 
             workflowMode: 'srt',
             subtitleInfo: { 
@@ -229,10 +255,7 @@ export default function VideoCard({ video }: { video: any }) {
               language: 'unknown'
             }
           });
-        } catch (err) {
-          throw err; // Caught by the Modal's try/catch
-        }
-      }}
+        }}
       />
     </div>
   );

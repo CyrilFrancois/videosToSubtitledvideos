@@ -3,7 +3,7 @@
 import React, { useMemo } from 'react';
 import { useStudio } from '@/app/page';
 import { 
-  Folder, Play, Trash2, Volume2, Text,
+  Folder, Play, Trash2, Volume2, Text, Eraser,
   Check, Loader2, ChevronDown, Cpu, Zap, Settings, ShieldAlert
 } from 'lucide-react';
 import { VideoFile } from '@/lib/types';
@@ -69,7 +69,6 @@ export default function Sidebar() {
 
   /**
    * RECURSIVE HELPER: Get all selected VIDEO files
-   * We filter out directories so the count and the processing queue are accurate.
    */
   const selectedVideos = useMemo(() => {
     const list: VideoFile[] = [];
@@ -171,17 +170,25 @@ export default function Sidebar() {
             </select>
           </div>
 
+          {/* WORKFLOW OPTIONS */}
           <div className="space-y-3 pt-4 border-t border-white/5">
             <Switch 
               label="Auto-Mux into MKV" 
               checked={settings.shouldMux} 
-              onChange={(v) => actions.setSettings({ shouldMux: v })} 
+              onChange={(v: boolean) => actions.setSettings({ shouldMux: v })} 
+            />
+            {/* NEW STRIP SUBTITLES OPTION */}
+            <Switch 
+              label="Strip Internal Tracks" 
+              icon={<Eraser size={12} />}
+              checked={settings.stripExistingSubs} 
+              onChange={(v: boolean) => actions.setSettings({ stripExistingSubs: v })} 
             />
             <Switch 
               label="Studio Cleanup (Delete Temp)" 
               checked={settings.shouldRemoveOriginal} 
               danger 
-              onChange={(v) => actions.setSettings({ shouldRemoveOriginal: v })} 
+              onChange={(v: boolean) => actions.setSettings({ shouldRemoveOriginal: v })} 
             />
           </div>
         </section>
@@ -202,12 +209,15 @@ export default function Sidebar() {
   );
 }
 
-function Switch({ label, checked, onChange, danger = false }: any) {
+function Switch({ label, icon, checked, onChange, danger = false }: any) {
   return (
     <label className="flex items-center justify-between cursor-pointer group">
-      <span className={`text-[11px] ${danger ? 'text-red-400/70 group-hover:text-red-400' : 'text-gray-400 group-hover:text-gray-200'} transition-colors`}>
-        {label}
-      </span>
+      <div className="flex items-center gap-2">
+        {icon && <span className={checked ? 'text-indigo-400' : 'text-gray-600'}>{icon}</span>}
+        <span className={`text-[11px] ${danger ? 'text-red-400/70 group-hover:text-red-400' : 'text-gray-400 group-hover:text-gray-200'} transition-colors`}>
+          {label}
+        </span>
+      </div>
       <div className="relative">
         <input 
           type="checkbox" 

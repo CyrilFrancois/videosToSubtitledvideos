@@ -1,43 +1,41 @@
 /**
  * Detailed statuses matching the Backend Task Manager events.
- * This drives the UI animations and progress indicators.
  */
 export type ProcessingStatus = 
   | 'idle' 
-  | 'queued'          // Waiting in the linear queue
-  | 'contextualizing' // Phase 0: LLM researching movie/series context
-  | 'transcribing'    // Phase 1: Whisper running audio extraction
-  | 'refining'         // Phase 2: LLM correcting Whisper hallucinations
-  | 'translating'     // Phase 3: Final language generation
-  | 'muxing'          // Phase 4: FFmpeg merging streams
-  | 'done'            // Success
-  | 'error'           // Failure
-  | 'interrupted'     // Active job killed by user
-  | 'cancelled'       // Queued job removed
-  | 'folder';         // Directory item
+  | 'queued' 
+  | 'contextualizing' 
+  | 'transcribing' 
+  | 'refining' 
+  | 'translating' 
+  | 'muxing' 
+  | 'done' 
+  | 'error' 
+  | 'interrupted' 
+  | 'cancelled' 
+  | 'folder';
 
 export interface SubtitleInfo {
   hasSubtitles: boolean;
   subType: 'embedded' | 'external' | 'mixed' | null;
   languages: string[];
   count: number;
-  srtPath?: string;   // Path to sidecar .srt if found
+  srtPath?: string; 
 }
 
 export interface VideoFile {
-  id: string;         // Unique identifier (usually filePath)
+  id: string; 
   fileName: string;
   filePath: string;
   extension?: string;
   is_directory: boolean;
   
-  // Metadata from scanner.py
   subtitleInfo?: SubtitleInfo;
   
-  // UI State - Updated via SSE
+  // UI State
   status: ProcessingStatus;
-  progress: number;    // 0 to 100
-  statusText?: string; // Descriptive text (e.g., "AI is translating to French...")
+  progress: number;
+  statusText?: string;
 
   // Tree Structure
   children?: VideoFile[] | null;
@@ -47,10 +45,12 @@ export interface VideoFile {
   targetLanguages?: string[];
   workflowMode?: 'hybrid' | 'whisper' | 'srt';
   syncOffset?: number;
+  /** If true, the muxing engine will strip all existing internal subtitle tracks */
+  stripExistingSubs?: boolean; 
 }
 
 /**
- * Global configuration state for the Sidebar and Batch Processing
+ * Global configuration state
  */
 export interface GlobalSettings {
   sourceLang: string[];
@@ -60,11 +60,10 @@ export interface GlobalSettings {
   autoGenerate: boolean;
   shouldMux: boolean;
   shouldRemoveOriginal: boolean;
+  /** Global default for stripping existing subtitles */
+  stripExistingSubs: boolean; 
 }
 
-/**
- * The Master State Object used by the StudioContext
- */
 export interface StudioState {
   items: VideoFile[];
   selectedIds: Set<string>;
@@ -87,11 +86,12 @@ export interface ProcessRequest {
   videos: Array<{
     name: string;
     path: string;
-    srtFoundPath: string;
     src: string;
     out: string[];
     workflowMode: string;
     syncOffset: number;
+    /** Instructions for the FFmpeg engine on a per-video basis */
+    stripExistingSubs: boolean; 
   }>;
   globalOptions: {
     transcriptionEngine: string;

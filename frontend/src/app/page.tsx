@@ -92,7 +92,8 @@ export default function DashboardPage() {
       modelSize: 'base',
       autoGenerate: true,
       shouldMux: true,
-      shouldRemoveOriginal: false
+      shouldRemoveOriginal: false,
+      stripExistingSubs: false // New Global Option
     }
   });
 
@@ -124,6 +125,7 @@ export default function DashboardPage() {
           sourceLang: prev.settings.sourceLang,
           targetLanguages: prev.settings.targetLanguages,
           workflowMode: prev.settings.workflowMode,
+          stripExistingSubs: prev.settings.stripExistingSubs, // Inherit from global
           children: f.is_directory ? process(f.children || []) : null
         }));
         return { ...prev, items: process(data.files || []), isScanning: false };
@@ -169,6 +171,7 @@ export default function DashboardPage() {
         if (updates.sourceLang) videoUpdates.sourceLang = updates.sourceLang;
         if (updates.targetLanguages) videoUpdates.targetLanguages = updates.targetLanguages;
         if (updates.workflowMode) videoUpdates.workflowMode = updates.workflowMode;
+        if (updates.stripExistingSubs !== undefined) videoUpdates.stripExistingSubs = updates.stripExistingSubs;
 
         const applyToAll = (list: VideoFile[]): VideoFile[] => list.map(item => ({
           ...item, ...videoUpdates,
@@ -210,7 +213,9 @@ export default function DashboardPage() {
             src: v.sourceLang?.[0] || prev.settings.sourceLang[0],
             out: v.targetLanguages || prev.settings.targetLanguages,
             workflowMode: v.workflowMode || prev.settings.workflowMode,
-            syncOffset: v.syncOffset || 0
+            syncOffset: v.syncOffset || 0,
+            // Include the strip option in the per-video payload
+            stripExistingSubs: v.stripExistingSubs ?? prev.settings.stripExistingSubs,
           })),
           globalOptions: {
             transcriptionEngine: prev.settings.modelSize,
@@ -241,7 +246,7 @@ export default function DashboardPage() {
     return () => {
       Object.values(activeListeners.current).forEach(es => es.close());
     };
-  }, []); // Only on mount
+  }, [performScan]); 
 
   if (!mounted) return <div className="h-screen w-full bg-[#0a0a0a]" />;
 
