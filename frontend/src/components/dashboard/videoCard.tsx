@@ -1,13 +1,12 @@
 "use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { useStudio } from '@/app/page';
 import SubImportModal from './SubImportModal';
 import { 
-  Volume2, Text, Link as LinkIcon, Clock, Upload, Cpu, 
-  ChevronDown, Check, Play, AlertCircle, Loader2 
+  Volume2, Text, Link as LinkIcon, Clock, Cpu, 
+  Check, Play, Loader2, FileText, Globe 
 } from 'lucide-react';
-import { uploadSubtitle } from '@/lib/api';
 import { ProcessingStatus } from '@/lib/types';
 
 export default function VideoCard({ video }: { video: any }) {
@@ -19,14 +18,18 @@ export default function VideoCard({ video }: { video: any }) {
   const isSelected = state.selectedIds.has(video.id);
   const isProcessing = !['idle', 'done', 'error', 'folder'].includes(video.status);
   
-  const subInfo = video.subtitleInfo || { hasSubtitles: false, subType: null };
+  // Ensure we have defaults so the UI doesn't crash if backend data is partial
+  const subInfo = video.subtitleInfo || { 
+    hasSubtitles: false, 
+    subType: null, 
+    externalPath: null, 
+    language: null 
+  };
+  
   const workflow = video.workflowMode || state.settings.workflowMode;
-
-  // Logic to determine which button is visually "active"
   const isWhisperActive = workflow === 'whisper' || (workflow === 'hybrid' && !subInfo.hasSubtitles);
   const isSourceActive = workflow === 'srt' || workflow === 'embedded' || (workflow === 'hybrid' && subInfo.hasSubtitles);
 
-  // --- HELPERS ---
   const getStatusColor = (status: ProcessingStatus) => {
     switch (status) {
       case 'done': return 'text-emerald-500';
@@ -36,30 +39,72 @@ export default function VideoCard({ video }: { video: any }) {
     }
   };
 
-  const availableLanguages = useMemo(() => {
-    const raw = process.env.NEXT_PUBLIC_LANGUAGES || '{"English":"en", "French":"fr"}';
-    return Object.entries(JSON.parse(raw)).map(([label, id]) => ({ id, label }));
-  }, []);
-
   return (
     <div className={`group relative mb-3 bg-[#0d0d0d] border rounded-xl transition-all duration-300 ${
       isSelected ? 'border-indigo-500/50 shadow-[0_0_20px_rgba(79,70,229,0.1)]' : 'border-white/5 hover:border-white/10'
     }`}>
       
       {/* STATUS BAR (TOP) */}
-      <div className="flex items-center justify-between px-4 py-3">
+      <div className="flex items-center justify-between px-4 py-3 relative">
         <div className="flex items-center gap-3 min-w-0">
           <input 
             type="checkbox"
             checked={isSelected}
             onChange={() => actions.toggleSelection(video.id, false)}
-            className="w-4 h-4 rounded border-white/10 bg-white/5 accent-indigo-600 cursor-pointer"
+            className="w-4 h-4 rounded border-white/10 bg-white/5 accent-indigo-600 cursor-pointer shrink-0"
           />
           <h3 className="text-sm font-medium text-slate-200 truncate">{video.fileName}</h3>
+          
           {subInfo.hasSubtitles && (
-            <span className="flex items-center gap-1 bg-indigo-500/10 text-indigo-400 text-[9px] font-bold px-2 py-0.5 rounded uppercase border border-indigo-500/20">
-              <Check size={10} /> {subInfo.subType}
-            </span>
+            <div className="relative group/tooltip flex shrink-0">
+              <span className="flex items-center gap-1 bg-indigo-500/10 text-indigo-400 text-[9px] font-bold px-2 py-0.5 rounded uppercase border border-indigo-500/20 cursor-help hover:bg-indigo-500/20 transition-colors">
+                <Check size={10} /> {subInfo.subType}
+              </span>
+
+              {/* TOOLTIP: Now using a fixed width and high Z-index to avoid clipping */}
+              <div className="absolute left-0 bottom-full mb-2 hidden group-hover/tooltip:flex flex-col z-[100] pointer-events-none">
+                <div className="bg-[#161616] border border-white/10 p-3 rounded-lg shadow-2xl w-80 backdrop-blur-xl animate-in fade-in slide-in-from-bottom-1">
+                  <div className="flex items-center justify-between mb-2 border-b border-white/10 pb-2">
+                    <div className="flex items-center gap-2">
+                      <FileText size={12} className="text-indigo-400" />
+                      <span className="text-[10px] font-bold text-white uppercase">Linked Subtitle</span>
+                    </div>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/5 text-gray-500 font-mono">
+                      {subInfo.subType}
+                    </span>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <div className="flex items-start gap-3">
+                      <div className="mt-0.5 p-1 bg-indigo-500/10 rounded">
+                        <Globe size={10} className="text-indigo-400" />
+                      </div>
+                      <div>
+                        <p className="text-[9px] text-gray-500 font-bold uppercase tracking-tighter">Language</p>
+                        <p className="text-[11px] text-indigo-300 font-medium italic">
+                          {subInfo.language ? subInfo.language.toUpperCase() : "Unknown (Auto-detecting)"}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-3">
+                      <div className="mt-0.5 p-1 bg-indigo-500/10 rounded">
+                        <LinkIcon size={10} className="text-indigo-400" />
+                      </div>
+                      <div className="min-w-0 overflow-hidden">
+                        <p className="text-[9px] text-gray-500 font-bold uppercase tracking-tighter">Source Path</p>
+                        <p className="text-[10px] text-gray-400 font-mono break-all leading-tight">
+                          {subInfo.externalPath || "N/A (Embedded Stream)"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Arrow */}
+                  <div className="absolute top-full left-4 w-3 h-3 bg-[#161616] border-r border-b border-white/10 rotate-45 -translate-y-1.5" />
+                </div>
+              </div>
+            </div>
           )}
         </div>
         
@@ -71,8 +116,6 @@ export default function VideoCard({ video }: { video: any }) {
 
       {/* CONTROLS GRID */}
       <div className="px-4 pb-4 grid grid-cols-12 gap-4">
-        
-        {/* Language Selection */}
         <div className="col-span-3 space-y-2">
           <span className="text-[9px] font-bold text-gray-600 uppercase">Languages</span>
           <div className="space-y-1.5 p-2 rounded-lg bg-black/40 border border-white/5">
@@ -87,7 +130,6 @@ export default function VideoCard({ video }: { video: any }) {
           </div>
         </div>
 
-        {/* Workflow Toggle */}
         <div className="col-span-5 space-y-2">
           <span className="text-[9px] font-bold text-gray-600 uppercase">Source Workflow</span>
           <div className="grid grid-cols-1 gap-1">
@@ -112,7 +154,6 @@ export default function VideoCard({ video }: { video: any }) {
           </div>
         </div>
 
-        {/* Primary Action */}
         <div className="col-span-4 flex flex-col justify-end gap-2">
           <button 
             onClick={() => setShowOffsets(!showOffsets)}
@@ -130,7 +171,7 @@ export default function VideoCard({ video }: { video: any }) {
         </div>
       </div>
 
-      {/* PROGRESS BAR (Only if active) */}
+      {/* PROGRESS BAR */}
       {isProcessing && (
         <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/5 overflow-hidden rounded-b-xl">
           <div 
@@ -143,7 +184,7 @@ export default function VideoCard({ video }: { video: any }) {
       {/* OFFSET DRAWER */}
       {showOffsets && (
         <div className="px-4 py-3 bg-indigo-500/5 border-t border-white/5 flex items-center gap-4 animate-in slide-in-from-top-2">
-          <span className="text-[10px] font-bold text-gray-500 uppercase">Synchronization Offset (Seconds)</span>
+          <span className="text-[10px] font-bold text-gray-500 uppercase">Sync Offset (s)</span>
           <input 
             type="number" step="0.1"
             value={video.syncOffset || 0}
@@ -157,7 +198,6 @@ export default function VideoCard({ video }: { video: any }) {
         isOpen={isModalOpen} 
         onClose={() => setIsModalOpen(false)} 
         videoName={video.fileName}
-        // modal logic handled here...
       />
     </div>
   );

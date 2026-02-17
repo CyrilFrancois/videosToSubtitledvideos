@@ -21,7 +21,7 @@ export const useStudio = () => {
   return context;
 };
 
-// --- DEBUGGER COMPONENT ---
+// --- DEBUGGER COMPONENT (Hidden by default) ---
 function AppStatusDebugger() {
   const { state } = useStudio();
   const [isVisible, setIsVisible] = useState(false);
@@ -66,46 +66,14 @@ function AppStatusDebugger() {
 
 // --- MAIN DASHBOARD CONTENT ---
 function DashboardContent() {
-  const { state, actions } = useStudio();
-
-  // Calculate only processing/queued videos for the top progress bar
-  const processingVideos = useMemo(() => {
-    const active: VideoFile[] = [];
-    const traverse = (list: VideoFile[]) => {
-      list.forEach(item => {
-        if (!item.is_directory && (item.status === 'processing' || item.status === 'queued')) {
-          active.push(item);
-        }
-        if (item.children) traverse(item.children);
-      });
-    };
-    traverse(state.items);
-    return active;
-  }, [state.items]);
-
-  // Selected videos for the "Start Process" button in Sidebar
-  const selectedFilesList = useMemo(() => {
-    const selected: VideoFile[] = [];
-    const traverse = (list: VideoFile[]) => {
-      list.forEach(item => {
-        if (!item.is_directory && state.selectedIds.has(item.id)) selected.push(item);
-        if (item.children) traverse(item.children);
-      });
-    };
-    traverse(state.items);
-    return selected;
-  }, [state.items, state.selectedIds]);
+  const { state } = useStudio();
 
   return (
     <div className="flex h-screen w-full bg-[#0a0a0a] text-slate-200 overflow-hidden">
-      <Sidebar 
-        onProcessAll={() => actions.process(selectedFilesList)}
-        hasSelection={state.selectedIds.size > 0} 
-      />
+      <Sidebar />
 
       <main className="flex-1 relative flex flex-col overflow-hidden">
-        {/* Pass props explicitly to GlobalProgress to ensure it wakes up */}
-        <GlobalProgress videos={processingVideos} logs={state.logs} />
+        <GlobalProgress />
         
         <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
           <VideoList videos={state.items} />
@@ -139,6 +107,7 @@ export default function DashboardPage() {
     }
   });
 
+  // HELPER: Update nested video status
   const updateVideoInList = useCallback((id: string, updates: Partial<VideoFile>) => {
     setState(prev => {
       const updateRecursive = (list: VideoFile[]): VideoFile[] => {
@@ -152,6 +121,25 @@ export default function DashboardPage() {
     });
   }, []);
 
+  // ACTION: Scan Filesystem (Stable Reference)
+  const scanAction = useCallback(async (path: string) => {
+    setState(prev => ({ ...prev, isScanning: true }));
+    try {
+      const data = await api.scanFolder(path, true);
+      const process = (files: any[]): VideoFile[] => files.map(f => ({
+        ...f, 
+        id: f.filePath, 
+        status: f.is_directory ? 'folder' : 'idle', 
+        progress: 0,
+        children: f.is_directory ? process(f.children || []) : null
+      }));
+      setState(prev => ({ ...prev, items: process(data.files || []), isScanning: false }));
+    } catch (e) {
+      setState(prev => ({ ...prev, isScanning: false }));
+    }
+  }, []);
+
+  // ACTION: SSE Subscription
   const subscribeToUpdates = useCallback((fileId: string) => {
     if (activeListeners.current[fileId]) activeListeners.current[fileId].close();
 
@@ -180,12 +168,10 @@ export default function DashboardPage() {
     activeListeners.current[fileId] = eventSource;
   }, [updateVideoInList]);
 
+  // COMBINED ACTIONS
   const actions = useMemo(() => ({
-    // FIX: Added navigate function that VideoList was looking for
-    navigate: (path: string) => {
-      setState(prev => ({ ...prev, currentPath: path }));
-    },
-
+    navigate: (path: string) => setState(prev => ({ ...prev, currentPath: path })),
+    
     setSettings: (updates: Partial<GlobalSettings>) => 
       setState(prev => ({ ...prev, settings: { ...prev.settings, ...updates } })),
 
@@ -202,19 +188,7 @@ export default function DashboardPage() {
       });
     },
 
-    scan: async () => {
-      setState(prev => ({ ...prev, isScanning: true }));
-      try {
-        const data = await api.scanFolder(state.currentPath, true);
-        const process = (files: any[]): VideoFile[] => files.map(f => ({
-          ...f, id: f.filePath, status: f.is_directory ? 'folder' : 'idle', progress: 0,
-          children: f.is_directory ? process(f.children || []) : null
-        }));
-        setState(prev => ({ ...prev, items: process(data.files || []), isScanning: false }));
-      } catch (e) {
-        setState(prev => ({ ...prev, isScanning: false }));
-      }
-    },
+    scan: () => scanAction(state.currentPath),
 
     process: async (targetVideos: VideoFile[]) => {
       if (targetVideos.length === 0) return;
@@ -228,7 +202,7 @@ export default function DashboardPage() {
         videos: targetVideos.map(v => ({
           name: v.fileName,
           path: v.filePath,
-          src: v.sourceLang?.[0] || 'auto',
+          src: state.settings.sourceLang[0],
           out: state.settings.targetLanguages,
           workflowMode: state.settings.workflowMode,
         })),
@@ -248,13 +222,18 @@ export default function DashboardPage() {
       try { await api.startJob(payload); } 
       catch (err) { targetVideos.forEach(v => updateVideoInList(v.id, { status: 'error' })); }
     }
-  }), [state.currentPath, state.settings, subscribeToUpdates, updateVideoInList]);
+  }), [state.currentPath, state.settings, scanAction, subscribeToUpdates, updateVideoInList]);
 
+  // INITIAL LOAD ONLY
   useEffect(() => {
     setMounted(true);
-    actions.scan();
-    return () => Object.values(activeListeners.current).forEach(es => es.close());
-  }, [actions]);
+    // Use the raw scanAction to avoid dependency on the 'actions' object
+    scanAction("/data"); 
+    
+    return () => {
+        Object.values(activeListeners.current).forEach(es => es.close());
+    };
+  }, [scanAction]);
 
   if (!mounted) return <div className="h-screen w-full bg-black" />;
 
