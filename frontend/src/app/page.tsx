@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useCallback, useEffect, useMemo, useRef, createContext, useContext } from 'react';
-import Sidebar from '@/components/layout/Sidebar';
+// Verify these paths in your sidebar/video list files!
+import Sidebar from '@/components/layout/Sidebar'; 
 import GlobalProgress from '@/components/dashboard/GlobalProgress';
 import VideoList from '@/components/dashboard/VideoList';
 import { api } from '@/lib/api';
@@ -10,14 +11,19 @@ import { createSSEConnection, SSEEvent } from '@/lib/sse';
 import { Terminal, Bug, X } from 'lucide-react';
 
 // --- CONTEXT DEFINITION ---
-const StudioContext = createContext<{
+// We keep this here so it's the "Source of Truth" for the entire dashboard
+export const StudioContext = createContext<{
   state: StudioState;
   actions: any;
 } | null>(null);
 
 export const useStudio = () => {
   const context = useContext(StudioContext);
-  if (!context) throw new Error("useStudio must be used within StudioContext");
+  if (!context) {
+    // If you see this error in the console, your sub-components 
+    // are importing useStudio from the wrong file.
+    throw new Error("useStudio must be used within StudioContext");
+  }
   return context;
 };
 
@@ -34,33 +40,73 @@ function AppStatusDebugger() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  if (!isVisible) return (
-    <button 
-      onClick={() => setIsVisible(true)}
-      className="fixed bottom-0 right-0 w-4 h-4 opacity-0 hover:opacity-100 z-[9999] cursor-help"
-    />
+  return (
+    <>
+      <button 
+        onClick={() => setIsVisible(true)}
+        className="fixed bottom-0 right-0 w-8 h-8 opacity-0 hover:opacity-100 z-[9999] cursor-help flex items-center justify-center text-gray-800"
+      >
+        <Bug size={12} />
+      </button>
+
+      {isVisible && (
+        <div className="fixed inset-y-0 right-0 w-full max-w-[500px] bg-[#050505] border-l border-white/10 z-[10000] shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
+          <div className="p-4 border-b border-white/10 flex justify-between items-center bg-white/[0.02]">
+            <div className="flex items-center gap-2 text-indigo-400 font-mono text-[10px] font-bold tracking-widest">
+              <Terminal size={14} /> SYSTEM_DEBUG_STDOUT
+            </div>
+            <button onClick={() => setIsVisible(false)} className="text-gray-500 hover:text-white transition-colors p-1">
+              <X size={18} />
+            </button>
+          </div>
+          <div className="flex-1 overflow-auto p-6 custom-scrollbar">
+            <pre className="text-[10px] font-mono text-emerald-500/90 leading-relaxed whitespace-pre-wrap">
+              {JSON.stringify(state, (key, value) => value instanceof Set ? Array.from(value) : value, 2)}
+            </pre>
+          </div>
+        </div>
+      )}
+    </>
   );
+}
+
+// --- MAIN DASHBOARD CONTENT ---
+function DashboardContent() {
+  const { state, actions } = useStudio();
+
+  // Calculate selected files for the Process button
+  const selectedFilesList = useMemo(() => {
+    const selected: VideoFile[] = [];
+    const traverse = (list: VideoFile[]) => {
+      list.forEach(item => {
+        if (!item.is_directory && state.selectedIds.has(item.id)) selected.push(item);
+        if (item.children) traverse(item.children);
+      });
+    };
+    traverse(state.items);
+    return selected;
+  }, [state.items, state.selectedIds]);
 
   return (
-    <div className="fixed inset-y-0 right-0 w-[450px] bg-black/95 border-l border-white/10 z-[10000] shadow-2xl flex flex-col animate-in slide-in-from-right duration-300 backdrop-blur-xl">
-      <div className="p-4 border-b border-white/10 flex justify-between items-center bg-white/[0.02]">
-        <div className="flex items-center gap-2 text-indigo-400 font-mono text-[10px] font-bold tracking-tighter">
-          <Terminal size={14} /> REACT_MASTER_STATE_V3
+    <div className="flex h-screen w-full bg-[#0a0a0a] text-slate-200 overflow-hidden">
+      <Sidebar 
+        onProcessAll={() => actions.process(selectedFilesList)}
+        hasSelection={state.selectedIds.size > 0} 
+      />
+
+      <main className="flex-1 relative flex flex-col overflow-hidden">
+        <GlobalProgress />
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
+          <VideoList videos={state.items} />
         </div>
-        <button onClick={() => setIsVisible(false)} className="text-gray-500 hover:text-white transition-colors">
-          <X size={16} />
-        </button>
-      </div>
-      <div className="flex-1 overflow-auto p-4 custom-scrollbar">
-        <pre className="text-[10px] font-mono text-emerald-500/90 leading-tight">
-          {JSON.stringify(state, (key, value) => value instanceof Set ? Array.from(value) : value, 2)}
-        </pre>
-      </div>
+      </main>
+
+      <AppStatusDebugger />
     </div>
   );
 }
 
-// --- MAIN PAGE ---
+// --- ROOT PAGE COMPONENT ---
 export default function DashboardPage() {
   const [mounted, setMounted] = useState(false);
   const activeListeners = useRef<Record<string, EventSource>>({});
@@ -82,7 +128,6 @@ export default function DashboardPage() {
     }
   });
 
-  // Helper: Find and update a video object inside a nested tree
   const updateVideoInList = useCallback((id: string, updates: Partial<VideoFile>) => {
     setState(prev => {
       const updateRecursive = (list: VideoFile[]): VideoFile[] => {
@@ -96,7 +141,6 @@ export default function DashboardPage() {
     });
   }, []);
 
-  // SSE Management
   const subscribeToUpdates = useCallback((fileId: string) => {
     if (activeListeners.current[fileId]) activeListeners.current[fileId].close();
 
@@ -125,12 +169,9 @@ export default function DashboardPage() {
     activeListeners.current[fileId] = eventSource;
   }, [updateVideoInList]);
 
-  // Actions exposed to the UI
   const actions = useMemo(() => ({
     setSettings: (updates: Partial<GlobalSettings>) => 
       setState(prev => ({ ...prev, settings: { ...prev.settings, ...updates } })),
-
-    navigate: (path: string) => setState(prev => ({ ...prev, currentPath: path })),
 
     toggleSelection: (id: string, isDir: boolean, children?: any[]) => {
       setState(prev => {
@@ -161,7 +202,6 @@ export default function DashboardPage() {
 
     process: async (targetVideos: VideoFile[]) => {
       if (targetVideos.length === 0) return;
-
       setState(prev => {
         const newLogs = { ...prev.logs };
         targetVideos.forEach(v => { newLogs[v.filePath] = []; });
@@ -198,40 +238,14 @@ export default function DashboardPage() {
     setMounted(true);
     actions.scan();
     return () => Object.values(activeListeners.current).forEach(es => es.close());
-  }, []);
+  }, [actions]);
 
-  const selectedFilesList = useMemo(() => {
-    const selected: VideoFile[] = [];
-    const traverse = (list: VideoFile[]) => {
-      list.forEach(item => {
-        if (!item.is_directory && state.selectedIds.has(item.id)) selected.push(item);
-        if (item.children) traverse(item.children);
-      });
-    };
-    traverse(state.items);
-    return selected;
-  }, [state.items, state.selectedIds]);
-
-  if (!mounted) return null;
+  // Prevent Hydration Mismatch
+  if (!mounted) return <div className="h-screen w-full bg-black" />;
 
   return (
     <StudioContext.Provider value={{ state, actions }}>
-      <div className="flex h-screen w-full bg-[#0a0a0a] text-slate-200 overflow-hidden">
-        <Sidebar 
-          onProcessAll={() => actions.process(selectedFilesList)}
-          hasSelection={state.selectedIds.size > 0} 
-        />
-
-        <main className="flex-1 relative flex flex-col overflow-hidden">
-          <GlobalProgress />
-          
-          <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
-            <VideoList videos={state.items} />
-          </div>
-        </main>
-
-        <AppStatusDebugger />
-      </div>
+      <DashboardContent />
     </StudioContext.Provider>
   );
 }
