@@ -2,92 +2,89 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 /**
  * API Service Layer
- * Updated to support the rich JSON payload and direct "startJob" naming.
+ * Optimized for SubStudio's "Last Input Wins" state management.
  */
 export const api = {
   // 1. Fetch directory structure
-  async scanFolder(path: string = "/data") {
-    const url = `${API_BASE_URL}/api/scan?target_path=${encodeURIComponent(path)}`;
+  async scanFolder(path: string = "/data", recursive: boolean = true) {
+    const params = new URLSearchParams({
+      target_path: path,
+      recursive: String(recursive)
+    });
     
-    const response = await fetch(url, {
+    const response = await fetch(`${API_BASE_URL}/api/scan?${params}`, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
     });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.detail || 'Failed to scan media library');
-    }
-
-    return response.json();
+    return handleResponse(response, 'Failed to scan media library');
   },
 
   /**
-   * 2. The New Start Job
-   * This matches the call in page.tsx: api.startJob(payload)
-   * Receives the "perfect" payload directly.
+   * 2. Start Processing Job
+   * Sends the unified payload (Sidebar globals + Card overrides)
    */
   async startJob(payload: any) {
-    const url = `${API_BASE_URL}/api/process`;
-    
-    const response = await fetch(url, {
+    const response = await fetch(`${API_BASE_URL}/api/process`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.detail || 'Failed to start the processing job');
-    }
-
-    return response.json();
+    return handleResponse(response, 'Failed to start the processing job');
   },
 
-  // 3. Global Kill Switch: Abort the entire queue
+  // 3. Global Kill Switch
   async abortAll() {
-    const url = `${API_BASE_URL}/api/abort`;
-    
-    const response = await fetch(url, { 
+    const response = await fetch(`${API_BASE_URL}/api/abort`, { 
       method: 'POST' 
     });
 
-    if (!response.ok) {
-      throw new Error('Failed to trigger global abort');
-    }
-
-    return response.json();
+    return handleResponse(response, 'Failed to trigger global abort');
   },
 
-  // 4. Cancel/Abort proxy (Used by VideoList components)
+  // 4. Cancel/Abort specific file
   async cancelJob(fileId: string) {
-    // Currently, we use the global abort for simplicity, 
-    // or you can implement a specific delete route in FastAPI.
-    return this.abortAll();
+    const response = await fetch(`${API_BASE_URL}/api/abort/${encodeURIComponent(fileId)}`, { 
+      method: 'DELETE' 
+    });
+    
+    // Fallback to global abort if the specific route doesn't exist yet
+    if (response.status === 404) return this.abortAll();
+    
+    return handleResponse(response, 'Failed to cancel specific job');
   },
 
-  // 5. Upload External Subtitle
+  /**
+   * 5. Upload External Subtitle
+   * Note: We do NOT set Content-Type header here. 
+   * The browser automatically sets it to multipart/form-data with the correct boundary.
+   */
   async uploadSubtitle(file: File, targetName: string, destinationPath: string) {
-    const url = `${API_BASE_URL}/api/subtitles/upload`;
-    
     const formData = new FormData();
     formData.append('file', file);
     formData.append('targetName', targetName);
     formData.append('destinationPath', destinationPath);
 
-    const response = await fetch(url, {
+    const response = await fetch(`${API_BASE_URL}/api/subtitles/upload`, {
       method: 'POST',
-      body: formData,
+      body: formData, // Browser handles boundary headers
     });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.detail || 'Failed to upload subtitle file');
-    }
-
-    return response.json();
+    return handleResponse(response, 'Failed to upload subtitle file');
   }
 };
 
-// Ensure individual exports match the new method names
+/**
+ * Generic Error Handling Helper
+ */
+async function handleResponse(response: Response, defaultError: string) {
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || defaultError);
+  }
+  return response.json();
+}
+
+// Named exports for convenience
 export const { uploadSubtitle, startJob, abortAll, cancelJob, scanFolder } = api;

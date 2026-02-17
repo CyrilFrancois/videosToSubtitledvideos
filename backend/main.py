@@ -238,3 +238,7 @@ async def sse_endpoint(file_id: str):
         event_manager.subscribe(file_id),
         media_type="text/event-stream"
     )
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}

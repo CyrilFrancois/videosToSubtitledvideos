@@ -9,7 +9,7 @@ import { VideoFile, GlobalSettings, StudioState } from '@/lib/types';
 import { createSSEConnection, SSEEvent } from '@/lib/sse';
 import { Terminal, Bug, X } from 'lucide-react';
 
-// --- CONTEXT DEFINITION ---
+// --- CONTEXT ---
 export const StudioContext = createContext<{
   state: StudioState;
   actions: any;
@@ -21,7 +21,7 @@ export const useStudio = () => {
   return context;
 };
 
-// --- DEBUGGER COMPONENT (Hidden by default) ---
+// --- DEBUGGER ---
 function AppStatusDebugger() {
   const { state } = useStudio();
   const [isVisible, setIsVisible] = useState(false);
@@ -34,58 +34,47 @@ function AppStatusDebugger() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  return (
-    <>
-      <button 
-        onClick={() => setIsVisible(true)}
-        className="fixed bottom-2 right-2 w-6 h-6 opacity-20 hover:opacity-100 z-[9999] cursor-help flex items-center justify-center text-white bg-white/10 rounded-full transition-all"
-      >
-        <Bug size={12} />
-      </button>
+  if (!isVisible) return (
+    <button onClick={() => setIsVisible(true)} className="fixed bottom-2 right-2 w-6 h-6 opacity-20 hover:opacity-100 z-[9999] flex items-center justify-center text-white bg-white/10 rounded-full transition-all">
+      <Bug size={12} />
+    </button>
+  );
 
-      {isVisible && (
-        <div className="fixed inset-y-0 right-0 w-full max-w-[500px] bg-[#050505] border-l border-white/10 z-[10000] shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
-          <div className="p-4 border-b border-white/10 flex justify-between items-center bg-white/[0.02]">
-            <div className="flex items-center gap-2 text-indigo-400 font-mono text-[10px] font-bold tracking-widest">
-              <Terminal size={14} /> SYSTEM_DEBUG_STDOUT
-            </div>
-            <button onClick={() => setIsVisible(false)} className="text-gray-500 hover:text-white transition-colors p-1">
-              <X size={18} />
-            </button>
-          </div>
-          <div className="flex-1 overflow-auto p-6 custom-scrollbar">
-            <pre className="text-[10px] font-mono text-emerald-500/90 leading-relaxed whitespace-pre-wrap">
-              {JSON.stringify(state, (key, value) => value instanceof Set ? Array.from(value) : value, 2)}
-            </pre>
-          </div>
+  return (
+    <div className="fixed inset-y-0 right-0 w-full max-w-[500px] bg-[#050505] border-l border-white/10 z-[10000] shadow-2xl flex flex-col">
+      <div className="p-4 border-b border-white/10 flex justify-between items-center bg-white/[0.02]">
+        <div className="flex items-center gap-2 text-indigo-400 font-mono text-[10px] font-bold tracking-widest">
+          <Terminal size={14} /> SYSTEM_DEBUG_STDOUT
         </div>
-      )}
-    </>
+        <button onClick={() => setIsVisible(false)} className="text-gray-500 hover:text-white p-1"><X size={18} /></button>
+      </div>
+      <div className="flex-1 overflow-auto p-6 custom-scrollbar">
+        <pre className="text-[10px] font-mono text-emerald-500/90 whitespace-pre-wrap">
+          {JSON.stringify(state, (k, v) => v instanceof Set ? Array.from(v) : v, 2)}
+        </pre>
+      </div>
+    </div>
   );
 }
 
-// --- MAIN DASHBOARD CONTENT ---
+// --- DASHBOARD LAYOUT ---
 function DashboardContent() {
   const { state } = useStudio();
-
   return (
     <div className="flex h-screen w-full bg-[#0a0a0a] text-slate-200 overflow-hidden">
       <Sidebar />
-
       <main className="flex-1 relative flex flex-col overflow-hidden">
         <GlobalProgress />
-        
         <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
           <VideoList videos={state.items} />
         </div>
       </main>
-
       <AppStatusDebugger />
     </div>
   );
 }
 
-// --- ROOT PAGE COMPONENT ---
+// --- ROOT PAGE ---
 export default function DashboardPage() {
   const [mounted, setMounted] = useState(false);
   const activeListeners = useRef<Record<string, EventSource>>({});
@@ -107,7 +96,7 @@ export default function DashboardPage() {
     }
   });
 
-  // HELPER: Update nested video status
+  // 1. RECURSIVE UPDATE HELPER
   const updateVideoInList = useCallback((id: string, updates: Partial<VideoFile>) => {
     setState(prev => {
       const updateRecursive = (list: VideoFile[]): VideoFile[] => {
@@ -121,59 +110,76 @@ export default function DashboardPage() {
     });
   }, []);
 
-  // ACTION: Scan Filesystem (Stable Reference)
-  const scanAction = useCallback(async (path: string) => {
+  // 2. STABLE SCAN ACTION
+  const performScan = useCallback(async (path: string) => {
     setState(prev => ({ ...prev, isScanning: true }));
     try {
-      const data = await api.scanFolder(path, true);
-      const process = (files: any[]): VideoFile[] => files.map(f => ({
-        ...f, 
-        id: f.filePath, 
-        status: f.is_directory ? 'folder' : 'idle', 
-        progress: 0,
-        children: f.is_directory ? process(f.children || []) : null
-      }));
-      setState(prev => ({ ...prev, items: process(data.files || []), isScanning: false }));
+      const data = await api.scanFolder(path);
+      setState(prev => {
+        const process = (files: any[]): VideoFile[] => files.map(f => ({
+          ...f, 
+          id: f.filePath, 
+          status: f.is_directory ? 'folder' : 'idle', 
+          progress: 0,
+          sourceLang: prev.settings.sourceLang,
+          targetLanguages: prev.settings.targetLanguages,
+          workflowMode: prev.settings.workflowMode,
+          children: f.is_directory ? process(f.children || []) : null
+        }));
+        return { ...prev, items: process(data.files || []), isScanning: false };
+      });
     } catch (e) {
+      console.error("Scan Failed:", e);
       setState(prev => ({ ...prev, isScanning: false }));
     }
   }, []);
 
-  // ACTION: SSE Subscription
+  // 3. SSE MANAGEMENT
   const subscribeToUpdates = useCallback((fileId: string) => {
     if (activeListeners.current[fileId]) activeListeners.current[fileId].close();
 
-    const eventSource = createSSEConnection(
-      fileId,
-      (data: SSEEvent) => {
-        if (data.type === 'status') {
-          updateVideoInList(data.fileId, {
-            status: data.status,
-            progress: data.progress,
-            statusText: data.message 
-          });
-          if (['done', 'error', 'cancelled'].includes(data.status)) {
-            eventSource.close();
-            delete activeListeners.current[fileId];
-          }
-        } else if (data.type === 'log') {
-          setState(prev => ({
-            ...prev,
-            logs: { ...prev.logs, [data.fileId]: [...(prev.logs[data.fileId] || []), data.message].slice(-100) }
-          }));
+    const es = createSSEConnection(fileId, (data: SSEEvent) => {
+      if (data.type === 'status') {
+        updateVideoInList(data.fileId, {
+          status: data.status,
+          progress: data.progress,
+          statusText: data.message 
+        });
+        if (['done', 'error', 'cancelled'].includes(data.status)) {
+          es.close();
+          delete activeListeners.current[fileId];
         }
-      },
-      () => delete activeListeners.current[fileId]
-    );
-    activeListeners.current[fileId] = eventSource;
+      }
+    }, () => delete activeListeners.current[fileId]);
+    
+    activeListeners.current[fileId] = es;
   }, [updateVideoInList]);
 
-  // COMBINED ACTIONS
+  // 4. COMBINED ACTIONS
   const actions = useMemo(() => ({
-    navigate: (path: string) => setState(prev => ({ ...prev, currentPath: path })),
+    navigate: (path: string) => {
+      setState(prev => ({ ...prev, currentPath: path }));
+      performScan(path);
+    },
     
-    setSettings: (updates: Partial<GlobalSettings>) => 
-      setState(prev => ({ ...prev, settings: { ...prev.settings, ...updates } })),
+    setSettings: (updates: Partial<GlobalSettings>) => {
+      setState(prev => {
+        const nextSettings = { ...prev.settings, ...updates };
+        const videoUpdates: Partial<VideoFile> = {};
+        if (updates.sourceLang) videoUpdates.sourceLang = updates.sourceLang;
+        if (updates.targetLanguages) videoUpdates.targetLanguages = updates.targetLanguages;
+        if (updates.workflowMode) videoUpdates.workflowMode = updates.workflowMode;
+
+        const applyToAll = (list: VideoFile[]): VideoFile[] => list.map(item => ({
+          ...item, ...videoUpdates,
+          children: item.children ? applyToAll(item.children) : null
+        }));
+
+        return { ...prev, settings: nextSettings, items: applyToAll(prev.items) };
+      });
+    },
+
+    updateVideoData: (id: string, updates: Partial<VideoFile>) => updateVideoInList(id, updates),
 
     toggleSelection: (id: string, isDir: boolean, children?: any[]) => {
       setState(prev => {
@@ -188,54 +194,56 @@ export default function DashboardPage() {
       });
     },
 
-    scan: () => scanAction(state.currentPath),
+    scan: () => setState(prev => {
+      performScan(prev.currentPath);
+      return prev;
+    }),
 
     process: async (targetVideos: VideoFile[]) => {
       if (targetVideos.length === 0) return;
+      
       setState(prev => {
-        const newLogs = { ...prev.logs };
-        targetVideos.forEach(v => { newLogs[v.filePath] = []; });
-        return { ...prev, logs: newLogs };
+        const payload = {
+          videos: targetVideos.map(v => ({
+            name: v.fileName,
+            path: v.filePath,
+            src: v.sourceLang?.[0] || prev.settings.sourceLang[0],
+            out: v.targetLanguages || prev.settings.targetLanguages,
+            workflowMode: v.workflowMode || prev.settings.workflowMode,
+            syncOffset: v.syncOffset || 0
+          })),
+          globalOptions: {
+            transcriptionEngine: prev.settings.modelSize,
+            generateSRT: prev.settings.autoGenerate,
+            muxIntoMkv: prev.settings.shouldMux,
+            cleanUp: prev.settings.shouldRemoveOriginal
+          }
+        };
+
+        targetVideos.forEach(v => {
+          updateVideoInList(v.id, { status: 'processing', progress: 5 });
+          subscribeToUpdates(v.filePath);
+        });
+
+        api.startJob(payload).catch(() => {
+          targetVideos.forEach(v => updateVideoInList(v.id, { status: 'error', statusText: 'Failed to start' }));
+        });
+
+        return prev;
       });
-
-      const payload = {
-        videos: targetVideos.map(v => ({
-          name: v.fileName,
-          path: v.filePath,
-          src: state.settings.sourceLang[0],
-          out: state.settings.targetLanguages,
-          workflowMode: state.settings.workflowMode,
-        })),
-        globalOptions: {
-          transcriptionEngine: state.settings.modelSize,
-          generateSRT: state.settings.autoGenerate,
-          muxIntoMkv: state.settings.shouldMux,
-          cleanUp: state.settings.shouldRemoveOriginal
-        }
-      };
-
-      targetVideos.forEach(v => {
-        updateVideoInList(v.id, { status: 'processing', progress: 5 });
-        subscribeToUpdates(v.filePath);
-      });
-
-      try { await api.startJob(payload); } 
-      catch (err) { targetVideos.forEach(v => updateVideoInList(v.id, { status: 'error' })); }
     }
-  }), [state.currentPath, state.settings, scanAction, subscribeToUpdates, updateVideoInList]);
+  }), [performScan, subscribeToUpdates, updateVideoInList]);
 
-  // INITIAL LOAD ONLY
+  // 5. LIFECYCLE
   useEffect(() => {
     setMounted(true);
-    // Use the raw scanAction to avoid dependency on the 'actions' object
-    scanAction("/data"); 
-    
+    performScan("/data"); 
     return () => {
-        Object.values(activeListeners.current).forEach(es => es.close());
+      Object.values(activeListeners.current).forEach(es => es.close());
     };
-  }, [scanAction]);
+  }, []); // Only on mount
 
-  if (!mounted) return <div className="h-screen w-full bg-black" />;
+  if (!mounted) return <div className="h-screen w-full bg-[#0a0a0a]" />;
 
   return (
     <StudioContext.Provider value={{ state, actions }}>
