@@ -109,8 +109,6 @@ Distributed under the MIT License. See LICENSE for more information.
 │   │   │   │   └── VideoList.tsx
 │   │   │   └── layout/
 │   │   │       └── Sidebar.tsx
-│   │   ├── hooks/
-│   │   │   └── useSocket.ts
 │   │   ├── lib/
 │   │   │   ├── api.ts
 │   │   │   ├── sse.ts

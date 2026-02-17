@@ -1,268 +1,211 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useMemo } from 'react';
+import { useStudio } from '@/app/page';
 import { 
   Folder, Play, Trash2, Volume2, Text,
-  Check, Loader2, ChevronDown, Cpu, Zap
+  Check, Loader2, ChevronDown, Cpu, Zap, Settings, ShieldAlert
 } from 'lucide-react';
 
-function SidebarLanguageSelector({ label, selected, options, onToggle, isSingle = false, showAuto = false }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const clickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-    if (isOpen) document.addEventListener("mousedown", clickOutside);
-    return () => document.removeEventListener("mousedown", clickOutside);
-  }, [isOpen]);
-
+/**
+ * Clean, stateless Language Selector component
+ */
+function LanguageDropdown({ label, selected, options, isSingle = false, onToggle }: any) {
+  const { actions } = useStudio();
+  const [isOpen, setIsOpen] = React.useState(false);
+  
   const displayValue = isSingle 
-    ? (selected[0] === 'auto' ? 'Auto Detect' : options.find(o => o.id === selected[0])?.label || 'Select')
-    : selected.map(id => id.toUpperCase()).join(', ') || 'None';
-
-  const icon = label === "SRC" ? <Volume2 size={12} className="mr-2 text-gray-500" /> : <Text size={12} className="mr-2 text-gray-500" />;
+    ? (selected[0] === 'auto' ? 'Auto Detect' : options.find((o: any) => o.id === selected[0])?.label || 'Select')
+    : selected.map((id: string) => id.toUpperCase()).join(', ') || 'None';
 
   return (
-    <div className="relative" ref={containerRef}>
+    <div className="relative">
       <button 
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex items-center justify-between w-full px-3 py-2.5 bg-black border border-white/10 rounded-lg text-[11px] font-mono hover:border-indigo-500/50 transition-colors ${isSingle ? 'text-blue-400' : 'text-indigo-400'}`}
+        className="flex items-center justify-between w-full px-3 py-2.5 bg-black/40 border border-white/10 rounded-lg text-[11px] hover:border-indigo-500/50 transition-all"
       >
-        <div className="flex items-center">
-          {icon}
-          <span className="text-gray-500 mr-2">{label}:</span> 
+        <div className="flex items-center gap-2">
+          {label === "SRC" ? <Volume2 size={12} className="text-gray-500" /> : <Text size={12} className="text-gray-500" />}
+          <span className="text-gray-500 font-bold">{label}:</span> 
+          <span className="text-indigo-400 font-bold truncate">{displayValue}</span>
         </div>
-        <span className="truncate flex-1 text-right mr-2 font-bold">{displayValue}</span>
         <ChevronDown size={12} className={`text-gray-600 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {isOpen && (
-        <div className="absolute z-50 w-full mt-1 bg-[#1a1a1a] border border-white/10 rounded-lg shadow-2xl py-1 max-h-48 overflow-y-auto custom-scrollbar">
-          {showAuto && (
-            <div 
-              onClick={() => { onToggle('auto'); setIsOpen(false); }}
-              className="flex items-center justify-between px-3 py-2 hover:bg-indigo-500/10 cursor-pointer text-[10px] border-b border-white/5"
-            >
-              <span className={selected.includes('auto') ? 'text-blue-400' : 'text-gray-400'}>Auto Detect</span>
-              {selected.includes('auto') && <Check size={12} className="text-blue-400" />}
-            </div>
-          )}
-          {options.map(lang => (
-            <div 
-              key={lang.id}
-              onClick={() => {
-                onToggle(lang.id);
-                if (isSingle) setIsOpen(false);
-              }}
-              className="flex items-center justify-between px-3 py-2 hover:bg-white/5 cursor-pointer text-[10px]"
-            >
-              <span className={selected.includes(lang.id) ? (isSingle ? 'text-blue-400' : 'text-indigo-400') : 'text-gray-400'}>
-                {lang.label} ({lang.id.toUpperCase()})
-              </span>
-              {selected.includes(lang.id) && <Check size={12} className={isSingle ? 'text-blue-400' : 'text-indigo-400'} />}
-            </div>
-          ))}
-        </div>
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setIsOpen(false)} />
+          <div className="absolute z-40 w-full mt-1 bg-[#1a1a1a] border border-white/10 rounded-lg shadow-2xl py-1 max-h-48 overflow-y-auto custom-scrollbar">
+            {options.map((lang: any) => (
+              <div 
+                key={lang.id}
+                onClick={() => {
+                  onToggle(lang.id);
+                  if (isSingle) setIsOpen(false);
+                }}
+                className="flex items-center justify-between px-3 py-2 hover:bg-indigo-500/10 cursor-pointer text-[10px]"
+              >
+                <span className={selected.includes(lang.id) ? 'text-indigo-400 font-bold' : 'text-gray-400'}>
+                  {lang.label}
+                </span>
+                {selected.includes(lang.id) && <Check size={12} className="text-indigo-400" />}
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
 }
 
-export default function Sidebar({ 
-  currentPath = "/data", 
-  onScanFolder, 
-  globalSettings, 
-  setGlobalSettings, 
-  onProcessAll,
-  isScanning,
-  hasVideos = false 
-}) {
-  const basePath = process.env.NEXT_PUBLIC_MEDIA_PATH || "/data";
+export default function Sidebar() {
+  const { state, actions } = useStudio();
+  const { settings, isScanning, selectedIds, items } = state;
 
-  const availableLanguages = React.useMemo(() => {
-    try {
-      const rawLangData = process.env.NEXT_PUBLIC_LANGUAGES || '{"English":"en"}';
-      return Object.entries(JSON.parse(rawLangData)).map(([label, id]) => ({ id, label }));
-    } catch (e) {
-      return [{ id: 'en', label: 'English' }];
-    }
+  const availableLanguages = useMemo(() => {
+    const raw = process.env.NEXT_PUBLIC_LANGUAGES || '{"English":"en", "French":"fr", "Spanish":"es", "German":"de", "Japanese":"ja"}';
+    return Object.entries(JSON.parse(raw)).map(([label, id]) => ({ id, label }));
   }, []);
 
-  const cleanDisplayPath = currentPath === "/data" ? "Root" : currentPath.replace('/data/', '');
+  const hasSelection = selectedIds.size > 0;
 
   return (
-    <aside className="w-80 bg-[#0a0a0a] border-r border-white/10 flex flex-col p-6 z-20 h-full overflow-y-auto custom-scrollbar">
-      {/* BRANDING HEADER WITH LARGER LOGO */}
-      <div className="mb-10 flex items-end justify-between">
+    <aside className="w-80 bg-[#0a0a0a] border-r border-white/10 flex flex-col p-6 h-full overflow-y-auto custom-scrollbar">
+      {/* BRANDING */}
+      <div className="mb-10 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-black text-white uppercase tracking-tighter leading-none">
-            SubStudio
-          </h1>
-          <span className="text-indigo-500 text-[11px] block font-bold opacity-80 tracking-widest uppercase mt-2">
-            Local Processing Studio
-          </span>
+          <h1 className="text-xl font-black text-white tracking-tighter uppercase italic">SubStudio</h1>
+          <div className="h-1 w-8 bg-indigo-600 rounded-full mt-1" />
         </div>
-        
-        {/* LOGO IMAGE - DOUBLED SIZE (h-16) */}
-        <div className="flex-shrink-0 ml-4">
-          <img 
-            src="/logo.png" 
-            alt="SubStudio Logo" 
-            className="h-16 w-auto object-contain brightness-110 drop-shadow-[0_0_15px_rgba(99,102,241,0.3)]"
-          />
-        </div>
+        <img src="/logo.png" alt="Logo" className="h-10 w-auto brightness-125" />
       </div>
 
-      <div className="space-y-8 flex-1">
+      <div className="flex-1 space-y-8">
         {/* LIBRARY SECTION */}
-        <section>
-          <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-4 block">Library Source</label>
+        <section className="space-y-3">
+          <label className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em]">Media Library</label>
           <button 
-            type="button"
             disabled={isScanning}
-            onClick={() => onScanFolder()} 
-            className={`w-full flex items-center justify-center gap-2 border p-3 rounded-xl transition-all font-medium ${
-              isScanning 
-              ? "bg-white/5 border-white/5 text-gray-500 cursor-not-allowed" 
-              : "bg-white/5 border-white/10 hover:bg-white/10 text-white active:scale-95 shadow-sm"
-            }`}
+            onClick={actions.scan}
+            className="w-full flex items-center justify-center gap-2 bg-white/5 border border-white/10 p-3 rounded-xl hover:bg-white/10 transition-all text-sm font-medium disabled:opacity-50"
           >
-            {isScanning ? <Loader2 size={18} className="animate-spin text-indigo-500" /> : <Folder size={18} className="text-indigo-400" />}
-            {isScanning ? "Scanning..." : "Sync Media Library"}
-          </button> 
-
-          <div className="mt-3 bg-white/5 rounded-xl border border-white/10 overflow-hidden text-[11px]">
-             <div className="px-3 py-2 border-b border-white/5 bg-white/5 opacity-50 font-mono">
-                <span className="text-[9px] text-gray-500 uppercase font-bold block mb-1">Root</span>
-                <span className="text-gray-400 truncate block">{basePath}</span>
-             </div>
-             <div className="px-3 py-2 bg-indigo-500/5 font-mono">
-                <span className="text-[9px] text-indigo-500 uppercase font-bold block mb-1">Viewing</span>
-                <span className="text-indigo-300 font-bold truncate block">{cleanDisplayPath}</span>
-             </div>
-          </div>
+            {isScanning ? <Loader2 size={16} className="animate-spin" /> : <Folder size={16} className="text-indigo-400" />}
+            {isScanning ? "Scanning..." : "Sync Files"}
+          </button>
         </section>
 
-        {/* CONFIG SECTION - Disabled during scan or if no videos */}
-        <section className={`space-y-6 transition-all duration-500 ${(!hasVideos || isScanning) ? 'opacity-20 pointer-events-none grayscale' : 'opacity-100'}`}>
-          
-          {/* LANGUAGE SETUP */}
-          <div className="space-y-2">
-            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2 block">Language Setup</label>
-            <div className="space-y-1.5">
-              <SidebarLanguageSelector 
-                label="SRC" 
-                selected={globalSettings?.sourceLang || ['auto']} 
-                options={availableLanguages} 
-                onToggle={(id) => setGlobalSettings({
-                  ...globalSettings, 
-                  sourceLang: [id] 
-                })} 
-                isSingle 
-                showAuto 
-              />
-              <SidebarLanguageSelector 
-                label="OUT" 
-                selected={globalSettings?.targetLanguages || []} 
-                options={availableLanguages} 
-                onToggle={(id) => {
-                  const current = globalSettings?.targetLanguages || [];
-                  const updated = current.includes(id) ? current.filter(x => x !== id) : [...current, id];
-                  setGlobalSettings({...globalSettings, targetLanguages: updated});
-                }} 
-              />
-            </div>
+        {/* ENGINE CONFIGURATION */}
+        <section className={`space-y-6 transition-opacity ${isScanning ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
+          <div className="flex items-center gap-2 text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em]">
+            <Settings size={12} /> Global Engine
           </div>
 
-          {/* WORKFLOW MODE */}
+          {/* Languages */}
           <div className="space-y-2">
-            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2 block">Workflow Mode</label>
-            <div className="relative">
-              <Zap size={12} className="absolute left-3 top-3.5 text-gray-500" />
-              <select 
-                className="w-full bg-black border border-white/10 p-2.5 pl-8 rounded-lg text-xs text-gray-200 outline-none focus:border-indigo-500 appearance-none font-mono cursor-pointer"
-                value={globalSettings?.workflowMode || "hybrid"}
-                onChange={(e) => setGlobalSettings({...globalSettings, workflowMode: e.target.value})}
-              >
-                <option value="hybrid">Smart: Use SRT (Local Fallback)</option>
-                <option value="force_ai">Manual: Force Transcription</option>
-              </select>
-              <ChevronDown size={12} className="absolute right-3 top-3.5 text-gray-600 pointer-events-none" />
-            </div>
+            <LanguageDropdown 
+              label="SRC" 
+              isSingle 
+              selected={settings.sourceLang} 
+              options={[{id: 'auto', label: 'Auto-Detect'}, ...availableLanguages]}
+              onToggle={(id: string) => actions.setSettings({ sourceLang: [id] })}
+            />
+            <LanguageDropdown 
+              label="OUT" 
+              selected={settings.targetLanguages} 
+              options={availableLanguages}
+              onToggle={(id: string) => {
+                const updated = settings.targetLanguages.includes(id)
+                  ? settings.targetLanguages.filter(x => x !== id)
+                  : [...settings.targetLanguages, id];
+                actions.setSettings({ targetLanguages: updated });
+              }}
+            />
           </div>
 
-          {/* ENGINE SETTINGS */}
+          {/* AI Model Select */}
           <div className="space-y-2">
-            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2 block">Transcription Engine</label>
-            <div className="relative">
-              <Cpu size={12} className="absolute left-3 top-3.5 text-gray-500" />
-              <select 
-                className="w-full bg-black border border-white/10 p-2.5 pl-8 rounded-lg text-xs text-gray-200 outline-none focus:border-indigo-500 appearance-none font-mono"
-                value={globalSettings?.modelSize || "base"}
-                onChange={(e) => setGlobalSettings({...globalSettings, modelSize: e.target.value})}
-              >
-                <option value="tiny">Tiny (Instant)</option>
-                <option value="base">Base (Balanced)</option>
-                <option value="large-v3">Large-v3 (Studio Grade)</option>
-              </select>
-              <ChevronDown size={12} className="absolute right-3 top-3.5 text-gray-500 pointer-events-none" />
-            </div>
+            <label className="text-[10px] text-gray-500 font-bold uppercase flex items-center gap-2">
+              <Cpu size={12} /> Whisper Engine
+            </label>
+            <select 
+              value={settings.modelSize}
+              onChange={(e) => actions.setSettings({ modelSize: e.target.value as any })}
+              className="w-full bg-black/40 border border-white/10 p-2.5 rounded-lg text-xs font-mono outline-none focus:border-indigo-500 transition-colors cursor-pointer"
+            >
+              <option value="tiny">Tiny (Fastest)</option>
+              <option value="base">Base (Recommended)</option>
+              <option value="small">Small</option>
+              <option value="medium">Medium</option>
+              <option value="large">Large-v3 (Precise)</option>
+            </select>
           </div>
 
-          {/* SYSTEM SWITCHES */}
+          {/* Workflow Toggle */}
+          <div className="space-y-2">
+            <label className="text-[10px] text-gray-500 font-bold uppercase flex items-center gap-2">
+              <Zap size={12} /> Pipeline Logic
+            </label>
+            <select 
+              value={settings.workflowMode}
+              onChange={(e) => actions.setSettings({ workflowMode: e.target.value as any })}
+              className="w-full bg-black/40 border border-white/10 p-2.5 rounded-lg text-xs font-mono outline-none focus:border-indigo-500 transition-colors cursor-pointer"
+            >
+              <option value="hybrid">Hybrid: AI + SRT Discovery</option>
+              <option value="whisper">Pure: AI Only</option>
+              <option value="srt">Legacy: SRT Refining Only</option>
+            </select>
+          </div>
+
+          {/* Feature Switches */}
           <div className="space-y-3 pt-4 border-t border-white/5">
-            <label className="flex items-center justify-between cursor-pointer group">
-              <span className="text-xs text-gray-400 group-hover:text-gray-200 transition-colors">Generate SRT if missing</span>
-              <input 
-                type="checkbox" 
-                className="sr-only peer"
-                checked={globalSettings?.autoGenerate}
-                onChange={(e) => setGlobalSettings({...globalSettings, autoGenerate: e.target.checked})}
-              />
-              <div className="w-8 h-4 bg-gray-800 rounded-full peer peer-checked:bg-indigo-600 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4 relative flex items-center"></div>
-            </label>
-
-            <label className="flex items-center justify-between cursor-pointer group">
-              <span className="text-xs text-gray-400 group-hover:text-gray-200 transition-colors">Mux into MKV Container</span>
-              <input 
-                type="checkbox" 
-                className="sr-only peer"
-                checked={globalSettings?.shouldMux}
-                onChange={(e) => setGlobalSettings({...globalSettings, shouldMux: e.target.checked})}
-              />
-              <div className="w-8 h-4 bg-gray-800 rounded-full peer peer-checked:bg-indigo-600 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4 relative flex items-center"></div>
-            </label>
-
-            <label className="flex items-center justify-between cursor-pointer group">
-              <span className="text-xs text-red-400/80 group-hover:text-red-400 transition-colors flex items-center gap-2">
-                <Trash2 size={14}/> Studio Cleanup
-              </span>
-              <input 
-                type="checkbox" 
-                className="sr-only peer"
-                checked={globalSettings?.shouldRemoveOriginal}
-                onChange={(e) => setGlobalSettings({...globalSettings, shouldRemoveOriginal: e.target.checked})}
-              />
-              <div className="w-8 h-4 bg-gray-800 rounded-full peer peer-checked:bg-red-600 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4 relative flex items-center"></div>
-            </label>
+            <Switch 
+              label="Auto-Mux into MKV" 
+              checked={settings.shouldMux} 
+              onChange={(v) => actions.setSettings({ shouldMux: v })} 
+            />
+            <Switch 
+              label="Studio Cleanup (Delete Temp)" 
+              checked={settings.shouldRemoveOriginal} 
+              danger 
+              onChange={(v) => actions.setSettings({ shouldRemoveOriginal: v })} 
+            />
           </div>
         </section>
       </div>
 
+      {/* FOOTER ACTION */}
       <div className="pt-6 border-t border-white/10">
         <button 
-          disabled={!hasVideos || isScanning}
-          onClick={() => onProcessAll()}
-          className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-20 disabled:grayscale text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all"
+          disabled={!hasSelection || isScanning}
+          onClick={() => {
+            const selectedVideos = state.items.filter(v => state.selectedIds.has(v.id));
+            actions.process(selectedVideos);
+          }}
+          className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-10 disabled:grayscale text-white rounded-xl font-bold text-sm flex items-center justify-center gap-3 transition-all active:scale-[0.98] shadow-2xl shadow-indigo-500/20"
         >
           {isScanning ? <Loader2 size={18} className="animate-spin" /> : <Play size={18} fill="currentColor" />}
-          {isScanning ? "STUDIO BUSY..." : "START BATCH"}
+          PROCESS {selectedIds.size} FILES
         </button>
       </div>
     </aside>
+  );
+}
+
+function Switch({ label, checked, onChange, danger = false }: any) {
+  return (
+    <label className="flex items-center justify-between cursor-pointer group">
+      <span className={`text-[11px] ${danger ? 'text-red-400/70 group-hover:text-red-400' : 'text-gray-400 group-hover:text-gray-200'} transition-colors`}>
+        {label}
+      </span>
+      <div className="relative">
+        <input 
+          type="checkbox" 
+          className="sr-only peer" 
+          checked={checked} 
+          onChange={(e) => onChange(e.target.checked)} 
+        />
+        <div className={`w-7 h-4 rounded-full transition-all peer-checked:after:translate-x-3 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all ${danger ? 'bg-gray-800 peer-checked:bg-red-600' : 'bg-gray-800 peer-checked:bg-indigo-600'}`} />
+      </div>
+    </label>
   );
 }

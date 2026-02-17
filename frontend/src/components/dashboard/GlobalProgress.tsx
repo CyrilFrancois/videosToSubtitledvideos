@@ -1,58 +1,161 @@
-import React from 'react';
-import { Activity, LayoutGrid } from 'lucide-react';
+"use client";
 
-export default function GlobalProgress({ videos }) {
-  const total = videos.length;
-  const completed = videos.filter(v => v.status === 'done').length;
-  const isProcessing = videos.some(v => v.status === 'processing');
-  const percentage = total > 0 ? (completed / total) * 100 : 0;
+import React, { useEffect, useRef, useMemo } from 'react';
+import { useStudio } from '@/app/page';
+import { Activity, Terminal, ChevronRight, Cpu, Zap, CheckCircle2 } from 'lucide-react';
+
+/**
+ * Auto-scrolling Log Terminal with log-level highlighting
+ */
+function LogTerminal({ logs }: { logs: string[] }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTo({
+        top: scrollRef.current.scrollHeight,
+        behavior: 'smooth'
+      });
+    }
+  }, [logs]);
 
   return (
-    <div className="sticky top-0 z-10 p-8 pb-4 bg-gradient-to-b from-[#0a0a0a] via-[#0a0a0a] to-transparent">
+    <div 
+      ref={scrollRef}
+      className="mt-4 h-48 w-full bg-black/80 border border-white/5 rounded-xl overflow-y-auto p-4 font-mono text-[11px] leading-relaxed shadow-inner custom-scrollbar selection:bg-indigo-500/30"
+    >
+      {logs.length > 0 ? (
+        logs.map((log, i) => {
+          const isError = /error|failed|exception/i.test(log);
+          const isWarning = /warning|low memory/i.test(log);
+          const isSuccess = /success|completed|done/i.test(log);
+          
+          return (
+            <div key={i} className="flex gap-3 mb-1 animate-in fade-in slide-in-from-left-1 duration-300">
+              <span className="text-gray-700 shrink-0 select-none">
+                [{new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}]
+              </span>
+              <span className={
+                isError ? 'text-red-400' : 
+                isWarning ? 'text-amber-400' : 
+                isSuccess ? 'text-emerald-400 font-bold' : 
+                'text-gray-300'
+              }>
+                <span className="text-indigo-500/50 mr-2">›</span>
+                {log}
+              </span>
+            </div>
+          );
+        })
+      ) : (
+        <div className="flex flex-col items-center justify-center h-full text-gray-700 gap-3">
+          <Cpu size={24} className="animate-pulse opacity-20" />
+          <span className="text-[10px] uppercase tracking-[0.3em] font-bold">Synchronizing Engine Stream...</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function GlobalProgress() {
+  const { state } = useStudio();
+  const { items, logs } = state;
+
+  // Derive global stats
+  const activeItems = useMemo(() => 
+    items.filter(v => !['idle', 'done', 'error', 'folder'].includes(v.status)),
+  [items]);
+
+  const completedCount = items.filter(v => v.status === 'done').length;
+  const totalCount = items.filter(v => !v.is_directory).length;
+  
+  const isProcessing = activeItems.length > 0;
+  const globalPercentage = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
+
+  // Determine the primary active log stream
+  // We prioritize the item that was most recently updated
+  const activeVideo = activeItems[0];
+  const currentLogs = activeVideo ? logs[activeVideo.id] || [] : [];
+
+  if (totalCount === 0) return null;
+
+  return (
+    <div className="sticky top-0 z-30 px-8 py-6 bg-gradient-to-b from-[#0a0a0a] via-[#0a0a0a] to-transparent backdrop-blur-sm">
       <div className="max-w-5xl mx-auto">
         <div className="flex justify-between items-end mb-4">
-          <div>
-            <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] mb-1 flex items-center gap-2">
+          <div className="space-y-1">
+            <h2 className="text-[10px] font-black text-gray-500 uppercase tracking-[0.25em] flex items-center gap-2">
               <Activity size={12} className={isProcessing ? "text-indigo-500 animate-pulse" : "text-gray-600"} />
-              Studio Monitor
+              System Core Monitor
             </h2>
             
-            {total > 0 ? (
-              <p className="text-3xl font-black text-white">
-                {completed} / {total} 
-                <span className="ml-3 text-xs text-gray-600 font-mono uppercase tracking-widest">
-                  Processed
-                </span>
-              </p>
-            ) : (
-              <p className="text-3xl font-bold text-gray-700 italic tracking-tight">
-                Select media to initialize batch...
-              </p>
-            )}
+            <div className="flex items-baseline gap-3">
+              <span className="text-4xl font-black text-white tabular-nums tracking-tighter">
+                {completedCount}<span className="text-gray-700 mx-1">/</span>{totalCount}
+              </span>
+              <span className="text-xs font-bold text-gray-500 uppercase tracking-widest pb-1">
+                Tasks Finished
+              </span>
+            </div>
           </div>
 
-          <div className="text-right">
-             <span className={`text-[10px] font-mono px-4 py-1.5 rounded-full border transition-all duration-500 ${
+          <div className="flex flex-col items-end gap-3">
+             <div className={`flex items-center gap-2 px-4 py-1.5 rounded-full border text-[10px] font-black tracking-widest transition-all duration-500 ${
                isProcessing 
-                ? 'text-indigo-400 bg-indigo-500/10 border-indigo-500/30 shadow-[0_0_15px_rgba(99,102,241,0.1)]' 
-                : 'text-gray-600 bg-white/5 border-white/5'
+                ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-400 shadow-[0_0_15px_rgba(99,102,241,0.1)]' 
+                : 'bg-emerald-500/5 border-emerald-500/20 text-emerald-500/60'
              }`}>
-               {isProcessing ? 'ENGINE ACTIVE' : 'STUDIO STANDBY'}
-             </span>
+               {isProcessing ? (
+                 <> <Zap size={10} className="fill-current" /> PIPELINE ACTIVE </>
+               ) : (
+                 <> <CheckCircle2 size={10} /> STUDIO STANDBY </>
+               )}
+             </div>
+             
+             {activeVideo && (
+               <div className="flex items-center gap-2 text-[10px] text-indigo-300 font-mono bg-indigo-500/5 px-3 py-1 rounded-md border border-indigo-500/10 animate-in slide-in-from-right-4">
+                 <ChevronRight size={12} className="text-indigo-500" />
+                 Processing: {activeVideo.fileName}
+               </div>
+             )}
           </div>
         </div>
 
-        {/* Progress Bar Container */}
-        <div className="h-1.5 w-full bg-white/[0.03] rounded-full overflow-hidden border border-white/5">
+        {/* Global Progress Track */}
+        <div className="relative h-1.5 w-full bg-white/[0.03] rounded-full overflow-hidden border border-white/5">
           <div 
-            className={`h-full transition-all duration-1000 ease-out ${
+            className={`h-full transition-all duration-1000 ease-in-out ${
               isProcessing 
-                ? 'bg-gradient-to-r from-indigo-600 via-purple-500 to-indigo-400' 
-                : 'bg-gray-800'
+                ? 'bg-gradient-to-r from-indigo-600 via-violet-500 to-indigo-400' 
+                : 'bg-emerald-600/40'
             }`}
-            style={{ width: total > 0 ? `${percentage}%` : '0%' }}
+            style={{ width: `${globalPercentage}%` }}
           />
+          {isProcessing && (
+            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent w-20 animate-shimmer" />
+          )}
         </div>
+
+        {/* Terminal Section: Intelligent Reveal */}
+        {isProcessing && (
+          <div className="mt-6 animate-in fade-in slide-in-from-top-4 duration-500">
+            <div className="flex items-center justify-between px-1">
+              <div className="flex items-center gap-2 text-[10px] font-bold text-gray-500 uppercase tracking-widest">
+                <Terminal size={12} className="text-indigo-500" />
+                Kernel Log Stream
+              </div>
+              <div className="flex gap-4">
+                <div className="text-[9px] font-mono text-gray-600 uppercase">
+                  Thread: <span className="text-indigo-400/60">Worker-01</span>
+                </div>
+                <div className="text-[9px] font-mono text-gray-600 uppercase">
+                  Buffer: <span className="text-indigo-400/60">{currentLogs.length} Lines</span>
+                </div>
+              </div>
+            </div>
+            <LogTerminal logs={currentLogs} />
+          </div>
+        )}
       </div>
     </div>
   );

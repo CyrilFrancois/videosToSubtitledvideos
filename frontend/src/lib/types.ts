@@ -1,51 +1,77 @@
 /**
  * Detailed statuses matching the Backend Task Manager events.
- * This allows the VideoCard and GlobalProgress to show specific AI stages.
+ * This drives the UI animations and progress indicators.
  */
 export type ProcessingStatus = 
   | 'idle' 
   | 'queued'          // Waiting in the linear queue
-  | 'contextualizing' // Phase 0: GPT researching the movie context
-  | 'transcribing'    // Phase 1: Whisper/Audio extraction
-  | 'refining'        // Phase 2: GPT correcting Whisper hallucinations
+  | 'contextualizing' // Phase 0: LLM researching movie/series context
+  | 'transcribing'    // Phase 1: Whisper running audio extraction
+  | 'refining'         // Phase 2: LLM correcting Whisper hallucinations
   | 'translating'     // Phase 3: Final language generation
   | 'muxing'          // Phase 4: FFmpeg merging streams
   | 'done'            // Success
   | 'error'           // Failure
-  | 'interrupted'     // Active job was killed by the "Abort" switch
-  | 'cancelled'       // Queued job was removed during an Abort
-  | 'folder';
+  | 'interrupted'     // Active job killed by user
+  | 'cancelled'       // Queued job removed
+  | 'folder';         // Directory item
 
 export interface SubtitleInfo {
   hasSubtitles: boolean;
-  subType: 'embedded' | 'external' | 'external_isolated' | null;
+  subType: 'embedded' | 'external' | 'mixed' | null;
   languages: string[];
   count: number;
+  srtPath?: string;   // Path to sidecar .srt if found
 }
 
 export interface VideoFile {
-  id: string;          // Full path from backend
+  id: string;         // Unique identifier (usually filePath)
   fileName: string;
   filePath: string;
   extension?: string;
   is_directory: boolean;
   
-  // Smart Metadata from scanner.py
+  // Metadata from scanner.py
   subtitleInfo?: SubtitleInfo;
-  has_matching_srt: boolean; 
   
-  // UI State - Driven by SSE events
+  // UI State - Updated via SSE
   status: ProcessingStatus;
   progress: number;    // 0 to 100
-  currentTask?: string; // Descriptive text (e.g., "Correcting phonetic errors...")
+  statusText?: string; // Descriptive text (e.g., "AI is translating to French...")
 
   // Tree Structure
-  children?: VideoFile[];
+  children?: VideoFile[] | null;
 
-  // Processing Settings (Per-file overrides)
-  selectedSourceLang?: string;
-  selectedTargetLangs?: string[];
-  workflowOverride?: 'hybrid' | 'force_ai';
+  // Per-file settings (Overrides global settings)
+  sourceLang?: string[];
+  targetLanguages?: string[];
+  workflowMode?: 'hybrid' | 'whisper' | 'srt';
+  syncOffset?: number;
+}
+
+/**
+ * Global configuration state for the Sidebar and Batch Processing
+ */
+export interface GlobalSettings {
+  sourceLang: string[];
+  targetLanguages: string[];
+  workflowMode: 'hybrid' | 'whisper' | 'srt';
+  modelSize: 'tiny' | 'base' | 'small' | 'medium' | 'large';
+  autoGenerate: boolean;
+  shouldMux: boolean;
+  shouldRemoveOriginal: boolean;
+}
+
+/**
+ * The Master State Object used by the StudioContext
+ */
+export interface StudioState {
+  items: VideoFile[];
+  selectedIds: Set<string>;
+  logs: Record<string, string[]>;
+  isScanning: boolean;
+  currentPath: string;
+  settings: GlobalSettings;
 }
 
 export interface ScanResponse {
@@ -55,14 +81,22 @@ export interface ScanResponse {
 }
 
 /**
- * Matches the ProcessRequest Pydantic model in backend/main.py
+ * Payload sent to POST /api/process
  */
-export interface ProcessSettings {
-  fileIds: string[];
-  sourceLang: string;
-  targetLanguages: string[];
-  workflowMode: 'hybrid' | 'force_ai';
-  shouldRemoveOriginal: boolean;
-  shouldMux: boolean;
-  modelSize: 'tiny' | 'base' | 'small' | 'medium' | 'large';
+export interface ProcessRequest {
+  videos: Array<{
+    name: string;
+    path: string;
+    srtFoundPath: string;
+    src: string;
+    out: string[];
+    workflowMode: string;
+    syncOffset: number;
+  }>;
+  globalOptions: {
+    transcriptionEngine: string;
+    generateSRT: boolean;
+    muxIntoMkv: boolean;
+    cleanUp: boolean;
+  };
 }

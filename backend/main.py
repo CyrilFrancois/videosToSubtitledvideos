@@ -18,7 +18,7 @@ from core.subtitle_processor import SubtitleProcessor
 from core.transcriber import VideoTranscriber
 from core.translator import SubtitleTranslator
 from core.muxer import VideoMuxer
-from core.events import event_manager
+from core.events import event_manager, setup_logging_bridge  # <--- Added bridge
 
 # --- LOGGING ---
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -31,7 +31,7 @@ class VideoJob(BaseModel):
     srtFoundPath: Optional[str] = "None"
     src: str = "auto"
     out: List[str] = ["fr"]
-    workflowMode: str = "srt" # Default to srt since you have embedded/local files
+    workflowMode: str = "srt" 
     syncOffset: int = 0
 
 class GlobalOptions(BaseModel):
@@ -97,9 +97,7 @@ translator = SubtitleTranslator()
 muxer = VideoMuxer()
 
 # --- HELPER FUNCTIONS ---
-
 def get_embedded_languages(video_path: str) -> List[str]:
-    """Returns a list of ISO codes for languages already inside the file."""
     try:
         probe = ffmpeg.probe(video_path)
         return [s.get('tags', {}).get('language', 'und') for s in probe.get('streams', []) if s['codec_type'] == 'subtitle']
@@ -112,7 +110,6 @@ async def run_linear_pipeline(request: ProcessRequest):
     task_manager.queue = request.videos
     opts = request.globalOptions
 
-    # Map for language matching (ISO-639-1 to ISO-639-2)
     iso_map = {'fr': 'fra', 'en': 'eng', 'es': 'spa', 'de': 'deu', 'it': 'ita', 'pt': 'por', 'ja': 'jpn'}
 
     while task_manager.queue:
@@ -122,10 +119,13 @@ async def run_linear_pipeline(request: ProcessRequest):
         fid = video.path 
         task_manager.current_fid = fid
 
+        # 1. SETUP LOG BRIDGE FOR THIS FILE
+        # Every logger.info inside the core modules will now be sent to this file's SSE
+        log_handler = setup_logging_bridge(fid)
+
         try:
             logger.info(f"🎬 [STARTING] {video.name}")
             
-            # 1. Check which languages are REALLY needed
             embedded_langs = get_embedded_languages(video.path)
             needed_langs = []
             translated_map = {}
@@ -134,34 +134,29 @@ async def run_linear_pipeline(request: ProcessRequest):
                 srt_name = f"{os.path.splitext(video.path)[0]}.{lang}.srt"
                 iso_3 = iso_map.get(lang, lang)
                 
-                # Skip if .srt exists on disk
                 if os.path.exists(srt_name):
                     logger.info(f"⏭️ [SKIP] {lang.upper()} SRT already exists on disk.")
                     with open(srt_name, 'r', encoding='utf-8') as f:
                         translated_map[lang] = f.read()
-                # Skip if language is already embedded in the MKV
                 elif iso_3 in embedded_langs:
                     logger.info(f"⏭️ [SKIP] {lang.upper()} already embedded in file.")
-                    # We don't add to translated_map because it's already in the source
                 else:
                     needed_langs.append(lang)
 
-            # 2. If no new translations are needed, jump to muxing
             if not needed_langs:
                 logger.info(f"✅ All requested languages present for {video.name}. Skipping to Muxer.")
             else:
-                # PHASE 0: Context
                 event_manager.emit(fid, "processing", 5, "Initializing Story Bible...")
                 context_bible = translator.get_context_profile(video.name)
 
-                # PHASE 1: Text Acquisition
                 srt_content = ""
                 is_whisper = False
 
                 if video.workflowMode == "srt":
                     if video.srtFoundPath == "Embedded":
-                        logger.info(f"📦 [SOURCE] Extracting embedded SRT for translation source...")
-                        srt_content = muxer.extract_subtitle(video.path) # Assumes you added this to muxer
+                        logger.info(f"📦 [SOURCE] Extracting embedded SRT...")
+                        # Assume muxer has an extract function now
+                        srt_content = muxer.extract_subtitle(video.path) 
                     elif video.srtFoundPath and os.path.exists(video.srtFoundPath):
                         logger.info(f"📂 [SOURCE] Using local SRT: {video.srtFoundPath}")
                         with open(video.srtFoundPath, 'r', encoding='utf-8') as f:
@@ -169,11 +164,9 @@ async def run_linear_pipeline(request: ProcessRequest):
 
                 if not srt_content or video.workflowMode == "whisper":
                     logger.info(f"🎙️ [SOURCE] Running AI Transcription")
-                    event_manager.emit(fid, "processing(15%)", 15, "AI Transcribing...")
                     srt_content = transcriber.transcribe(video.path, fid, event_manager.emit, task_manager)
                     is_whisper = True
 
-                # PHASE 2 & 3: Translation (Only for needed_langs)
                 for lang in needed_langs:
                     if task_manager.is_aborted: break
                     event_manager.emit(fid, "translating", 40, f"Translating to {lang.upper()}...")
@@ -182,13 +175,11 @@ async def run_linear_pipeline(request: ProcessRequest):
                     )
                     translated_map[lang] = translation
                     
-                    # Immediate Save to Disk
                     if opts.generateSRT:
                         srt_export_path = f"{os.path.splitext(video.path)[0]}.{lang}.srt"
                         with open(srt_export_path, "w", encoding="utf-8") as f:
                             f.write(translation)
 
-            # PHASE 4: Muxing (Always run to ensure final file is consistent)
             if opts.muxIntoMkv and not task_manager.is_aborted:
                 event_manager.emit(fid, "muxing", 85, "Muxing into final MKV...")
                 muxer.mux(
@@ -207,6 +198,8 @@ async def run_linear_pipeline(request: ProcessRequest):
             logger.error(f"❌ [PIPELINE ERROR] {fid}: {str(e)}")
             event_manager.emit(fid, "error", 0, f"Error: {str(e)}")
         finally:
+            # 2. REMOVE LOG BRIDGE TO PREVENT MEMORY LEAKS/DUPLICATE LOGS
+            logging.getLogger("SubStudio").removeHandler(log_handler)
             task_manager.artifacts = []
 
     task_manager.current_fid = None

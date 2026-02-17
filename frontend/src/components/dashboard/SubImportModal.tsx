@@ -1,21 +1,29 @@
 "use client";
 
-import React, { useState, useCallback } from 'react';
-import { X, Upload, Globe, FileText, Search, AlertCircle } from 'lucide-react';
+import React, { useState, useCallback, useMemo } from 'react';
+import { X, Upload, Globe, FileText, Search, AlertCircle, Loader2 } from 'lucide-react';
 
 interface SubImportModalProps {
   isOpen: boolean;
   onClose: () => void;
   videoName: string; 
   videoPath: string; 
-  onFileSelect: (file: File, targetName: string, destinationPath: string) => void;
+  onFileSelect: (file: File, targetName: string, destinationPath: string) => Promise<void>;
 }
 
 export default function SubImportModal({ isOpen, onClose, videoName, videoPath, onFileSelect }: SubImportModalProps) {
   const [isDragging, setIsDragging] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
 
-  // Helper: "MyVideo.mp4" -> "MyVideo"
-  const baseName = videoName.replace(/\.[^/.]+$/, "");
+  // 1. CLEAN FILENAME LOGIC
+  // Removes extensions and common "Scene" noise for better search results
+  const baseName = useMemo(() => {
+    return videoName
+      .replace(/\.[^/.]+$/, "") // Remove extension
+      .replace(/\b(1080p|720p|2160p|4k|bluray|x264|x265|h264|h265|web-dl|brrip|dvdrip)\b/gi, "") // Remove quality tags
+      .replace(/[._]/g, " ") // Replace dots/underscores with spaces
+      .trim();
+  }, [videoName]);
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -24,11 +32,22 @@ export default function SubImportModal({ isOpen, onClose, videoName, videoPath, 
     else if (e.type === "dragleave") setIsDragging(false);
   }, []);
 
-  const processFile = (file: File) => {
-    if (file.name.endsWith('.srt')) {
-      onFileSelect(file, `${baseName}.srt`, videoPath);
-    } else {
-      alert("Please upload a valid .srt file");
+  const processFile = async (file: File) => {
+    if (!file.name.toLowerCase().endsWith('.srt')) {
+      alert("Invalid format. Please provide a standard .srt file.");
+      return;
+    }
+
+    try {
+      setIsUploading(true);
+      // Construct the final target name based on the original video name
+      const targetSrtName = videoName.replace(/\.[^/.]+$/, ".srt");
+      await onFileSelect(file, targetSrtName, videoPath);
+      onClose();
+    } catch (err) {
+      console.error("Upload failed", err);
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -36,78 +55,62 @@ export default function SubImportModal({ isOpen, onClose, videoName, videoPath, 
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+    if (e.dataTransfer.files?.[0]) {
       processFile(e.dataTransfer.files[0]);
     }
-  }, [baseName, videoPath]);
+  }, [videoName, videoPath]);
 
-  /**
-   * Enhanced Search Logic
-   * Cleans alphanumeric characters and formats URLs per provider
-   */
   const openSearch = (provider: 'subdl' | 'yts' | 'opensubs') => {
-    // 1. Clean string: Replace non-alphanumeric (dots, dashes) with spaces
-    const cleanBase = baseName.replace(/[^a-z0-9]/gi, ' ').trim();
-    
-    // 2. Refine spaces for standard providers (SubDL, YTS)
-    const spaceQuery = cleanBase.replace(/\s+/g, ' '); 
-    
-    // 3. Refine for OpenSubtitles (requires '+')
-    const plusQuery = spaceQuery.replace(/\s+/g, '+');
-
-    let url = '';
-    
-    switch(provider) {
-      case 'subdl':
-        url = `https://subdl.com/search/${encodeURIComponent(spaceQuery)}`;
-        break;
-        
-      case 'yts':
-        url = `https://yts-subs.com/search/${encodeURIComponent(spaceQuery)}`;
-        break;
-        
-      case 'opensubs':
-        url = `https://www.opensubtitles.com/en/en/search-all/q-${plusQuery}/hearing_impaired-include/machine_translated-/trusted_sources-`;
-        break;
-    }
-
-    if (url) {
-      window.open(url, '_blank');
-    }
+    const query = encodeURIComponent(baseName);
+    const providers = {
+      subdl: `https://subdl.com/search/${query}`,
+      yts: `https://yts-subs.com/search/${query}`,
+      opensubs: `https://www.opensubtitles.org/en/search2/sublanguageid-all/moviename-${query.replace(/%20/g, '+')}`
+    };
+    window.open(providers[provider], '_blank');
   };
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 animate-in fade-in duration-200">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/90 backdrop-blur-md" onClick={onClose} />
       
       {/* Modal Container */}
-      <div className="relative bg-[#121212] border border-white/10 w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-        <div className="p-6">
-          {/* Header */}
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-lg font-bold text-white flex items-center gap-2">
-              <FileText className="text-indigo-400" size={20} />
-              Import Subtitles
-            </h3>
-            <button onClick={onClose} className="text-gray-500 hover:text-white transition-colors">
-              <X size={20} />
-            </button>
+      <div className="relative bg-[#0a0a0a] border border-white/10 w-full max-w-md rounded-2xl shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden animate-in zoom-in-95 duration-300">
+        
+        {/* Header */}
+        <div className="p-6 pb-0 flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-indigo-500/10 rounded-lg">
+              <FileText className="text-indigo-400" size={18} />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider">Manual Import</h3>
+              <p className="text-[10px] text-gray-500 font-medium uppercase tracking-tighter">Inject external SRT into workspace</p>
+            </div>
           </div>
+          <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-full text-gray-500 hover:text-white transition-all">
+            <X size={18} />
+          </button>
+        </div>
 
-          {/* Context Info */}
-          <div className="bg-indigo-500/5 border border-indigo-500/20 rounded-lg p-3 mb-6">
-            <p className="text-[10px] text-indigo-300 uppercase font-bold mb-1 flex items-center gap-1">
-              <AlertCircle size={10} /> Target Destination
-            </p>
-            <p className="text-[10px] text-gray-500 font-mono truncate mb-2">
-              Path: {videoPath || './'}
-            </p>
-            <p className="text-xs text-gray-200 font-mono truncate bg-black/40 p-1.5 rounded border border-white/5">
-              {baseName}<span className="text-indigo-400 font-bold">.srt</span>
-            </p>
+        <div className="p-6 space-y-6">
+          {/* Target Visualizer */}
+          <div className="bg-white/[0.02] border border-white/5 rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <AlertCircle size={12} className="text-indigo-500" />
+              <span className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Target Pairing</span>
+            </div>
+            <div className="space-y-2">
+              <div className="text-[11px] text-gray-400 font-mono truncate opacity-50">{videoPath}/</div>
+              <div className="text-xs text-indigo-100 font-mono flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
+                {videoName.replace(/\.[^/.]+$/, "")}
+                <span className="text-indigo-500 font-black">.srt</span>
+              </div>
+            </div>
           </div>
 
           {/* Drag 'n Drop Zone */}
@@ -117,81 +120,66 @@ export default function SubImportModal({ isOpen, onClose, videoName, videoPath, 
             onDragOver={handleDrag}
             onDrop={handleDrop}
             className={`
-              relative border-2 border-dashed rounded-xl p-10 flex flex-col items-center justify-center transition-all
-              ${isDragging ? 'border-indigo-500 bg-indigo-500/10' : 'border-white/5 bg-white/[0.02] hover:bg-white/[0.04]'}
+              relative border-2 border-dashed rounded-2xl p-8 flex flex-col items-center justify-center transition-all duration-300 group
+              ${isDragging ? 'border-indigo-500 bg-indigo-500/10 scale-[1.02]' : 'border-white/10 bg-white/[0.01] hover:bg-white/[0.03] hover:border-white/20'}
+              ${isUploading ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
             `}
           >
-            <Upload className={`mb-3 ${isDragging ? 'text-indigo-400' : 'text-gray-600'}`} size={32} />
-            <p className="text-sm text-gray-300 font-medium text-center">
-              Drop <span className="text-indigo-400 font-bold">.srt</span> file here
+            {isUploading ? (
+              <Loader2 className="mb-3 text-indigo-500 animate-spin" size={32} />
+            ) : (
+              <Upload className={`mb-3 transition-transform duration-300 ${isDragging ? 'translate-y-[-4px] text-indigo-400' : 'text-gray-600 group-hover:text-gray-400'}`} size={32} />
+            )}
+            
+            <p className="text-sm text-gray-300 font-bold mb-1">
+              {isUploading ? 'Uploading to server...' : 'Drop SRT file here'}
             </p>
-            <p className="text-[10px] text-gray-600 mt-2 uppercase tracking-tighter font-bold italic">or click to browse local files</p>
+            <p className="text-[10px] text-gray-600 uppercase font-black tracking-widest">or click to browse local storage</p>
+            
             <input 
               type="file" 
               accept=".srt"
+              disabled={isUploading}
               className="absolute inset-0 opacity-0 cursor-pointer" 
               onChange={(e) => e.target.files?.[0] && processFile(e.target.files[0])}
             />
           </div>
 
-          {/* Divider */}
-          <div className="relative my-8">
-            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-white/5"></div></div>
-            <div className="relative flex justify-center text-[10px] uppercase font-bold tracking-widest">
-                <span className="bg-[#121212] px-4 text-gray-500">External Providers</span>
-            </div>
-          </div>
-
-          {/* Multi-Provider Search Buttons */}
+          {/* Provider Search */}
           <div className="space-y-2">
-            <button 
-              onClick={() => openSearch('opensubs')}
-              className="w-full group flex items-center justify-between p-3 bg-white/[0.01] border border-white/5 rounded-xl hover:border-orange-500/50 transition-all hover:bg-white/[0.03]"
-            >
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-orange-500/10 rounded-lg text-orange-400 group-hover:bg-orange-500 group-hover:text-white transition-all">
-                  <Globe size={16} />
-                </div>
-                <p className="text-xs font-bold text-gray-300">Search on OpenSubtitles</p>
-              </div>
-              <Search size={14} className="text-gray-600 group-hover:text-orange-400" />
-            </button>
-            
-            <button 
-              onClick={() => openSearch('subdl')}
-              className="w-full group flex items-center justify-between p-3 bg-white/[0.01] border border-white/5 rounded-xl hover:border-indigo-500/50 transition-all hover:bg-white/[0.03]"
-            >
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-indigo-500/10 rounded-lg text-indigo-400 group-hover:bg-indigo-500 group-hover:text-white transition-all">
-                  <Globe size={16} />
-                </div>
-                <p className="text-xs font-bold text-gray-300">Search on Subdl</p>
-              </div>
-              <Search size={14} className="text-gray-600 group-hover:text-indigo-400" />
-            </button>
+            <div className="flex items-center gap-2 px-1 mb-3">
+              <div className="h-[1px] flex-1 bg-white/5" />
+              <span className="text-[9px] font-black text-gray-600 uppercase tracking-[0.2em]">External Lookup</span>
+              <div className="h-[1px] flex-1 bg-white/5" />
+            </div>
 
-            <button 
-              onClick={() => openSearch('yts')}
-              className="w-full group flex items-center justify-between p-3 bg-white/[0.01] border border-white/5 rounded-xl hover:border-emerald-500/50 transition-all hover:bg-white/[0.03]"
-            >
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-400 group-hover:bg-emerald-500 group-hover:text-white transition-all">
-                  <Globe size={16} />
-                </div>
-                <p className="text-xs font-bold text-gray-300">Search on YTS-Subs</p>
-              </div>
-              <Search size={14} className="text-gray-600 group-hover:text-emerald-400" />
-            </button>
+            <div className="grid grid-cols-3 gap-2">
+              <ProviderButton icon={<Globe size={14}/>} label="OpenSubs" color="hover:border-orange-500/50" onClick={() => openSearch('opensubs')} />
+              <ProviderButton icon={<Globe size={14}/>} label="SubDL" color="hover:border-indigo-500/50" onClick={() => openSearch('subdl')} />
+              <ProviderButton icon={<Globe size={14}/>} label="YTS" color="hover:border-emerald-500/50" onClick={() => openSearch('yts')} />
+            </div>
           </div>
         </div>
         
-        {/* Footer Note */}
-        <div className="bg-indigo-500/5 p-4 text-center border-t border-white/5">
-          <p className="text-[9px] text-gray-600 leading-relaxed px-4">
-            Uploaded files are processed immediately. If a conflict occurs, a numerical suffix is added to ensure your data remains safe.
+        {/* Security Note */}
+        <div className="bg-black p-4 text-center border-t border-white/5">
+          <p className="text-[9px] text-gray-700 font-medium leading-relaxed px-6">
+            SubStudio strictly monitors the file system. Uploaded SRTs are automatically renamed to match the video stream for seamless muxing.
           </p>
         </div>
       </div>
     </div>
+  );
+}
+
+function ProviderButton({ icon, label, color, onClick }: any) {
+  return (
+    <button 
+      onClick={onClick}
+      className={`flex flex-col items-center justify-center gap-2 p-3 bg-white/[0.02] border border-white/5 rounded-xl transition-all hover:bg-white/[0.05] ${color} group`}
+    >
+      <div className="text-gray-600 group-hover:text-white transition-colors">{icon}</div>
+      <span className="text-[10px] font-bold text-gray-500 group-hover:text-gray-300">{label}</span>
+    </button>
   );
 }
