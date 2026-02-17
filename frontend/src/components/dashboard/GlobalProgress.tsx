@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useMemo } from 'react';
 import { useStudio } from '@/app/page';
 import { Activity, Terminal, ChevronRight, Cpu, Zap, CheckCircle2 } from 'lucide-react';
+import { VideoFile } from '@/lib/types';
 
 /**
  * Auto-scrolling Log Terminal with log-level highlighting
@@ -58,25 +59,42 @@ function LogTerminal({ logs }: { logs: string[] }) {
 }
 
 export default function GlobalProgress() {
-  const { state } = useStudio();
-  const { items, logs } = state;
+  const studio = useStudio();
+  
+  // Defensive check: If context isn't ready, don't crash
+  if (!studio || !studio.state) return null;
+
+  const { items, logs } = studio.state;
+
+  // Helper to flatten the tree and get all video files
+  const allVideos = useMemo(() => {
+    const flat: VideoFile[] = [];
+    const traverse = (list: VideoFile[]) => {
+      list.forEach(item => {
+        if (!item.is_directory) flat.push(item);
+        if (item.children) traverse(item.children);
+      });
+    };
+    traverse(items || []);
+    return flat;
+  }, [items]);
 
   // Derive global stats
   const activeItems = useMemo(() => 
-    items.filter(v => !['idle', 'done', 'error', 'folder'].includes(v.status)),
-  [items]);
+    allVideos.filter(v => ['processing', 'queued'].includes(v.status || '')),
+  [allVideos]);
 
-  const completedCount = items.filter(v => v.status === 'done').length;
-  const totalCount = items.filter(v => !v.is_directory).length;
+  const completedCount = allVideos.filter(v => v.status === 'done').length;
+  const totalCount = allVideos.length;
   
   const isProcessing = activeItems.length > 0;
   const globalPercentage = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
 
-  // Determine the primary active log stream
-  // We prioritize the item that was most recently updated
+  // Prioritize the log stream of the first active video
   const activeVideo = activeItems[0];
-  const currentLogs = activeVideo ? logs[activeVideo.id] || [] : [];
+  const currentLogs = activeVideo ? logs[activeVideo.filePath] || logs[activeVideo.id] || [] : [];
 
+  // Don't show the bar if there are no videos loaded yet
   if (totalCount === 0) return null;
 
   return (
@@ -136,7 +154,7 @@ export default function GlobalProgress() {
           )}
         </div>
 
-        {/* Terminal Section: Intelligent Reveal */}
+        {/* Terminal Section */}
         {isProcessing && (
           <div className="mt-6 animate-in fade-in slide-in-from-top-4 duration-500">
             <div className="flex items-center justify-between px-1">

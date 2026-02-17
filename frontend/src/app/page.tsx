@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useCallback, useEffect, useMemo, useRef, createContext, useContext } from 'react';
-// Verify these paths in your sidebar/video list files!
 import Sidebar from '@/components/layout/Sidebar'; 
 import GlobalProgress from '@/components/dashboard/GlobalProgress';
 import VideoList from '@/components/dashboard/VideoList';
@@ -11,7 +10,6 @@ import { createSSEConnection, SSEEvent } from '@/lib/sse';
 import { Terminal, Bug, X } from 'lucide-react';
 
 // --- CONTEXT DEFINITION ---
-// We keep this here so it's the "Source of Truth" for the entire dashboard
 export const StudioContext = createContext<{
   state: StudioState;
   actions: any;
@@ -19,11 +17,7 @@ export const StudioContext = createContext<{
 
 export const useStudio = () => {
   const context = useContext(StudioContext);
-  if (!context) {
-    // If you see this error in the console, your sub-components 
-    // are importing useStudio from the wrong file.
-    throw new Error("useStudio must be used within StudioContext");
-  }
+  if (!context) throw new Error("useStudio must be used within StudioContext");
   return context;
 };
 
@@ -44,7 +38,7 @@ function AppStatusDebugger() {
     <>
       <button 
         onClick={() => setIsVisible(true)}
-        className="fixed bottom-0 right-0 w-8 h-8 opacity-0 hover:opacity-100 z-[9999] cursor-help flex items-center justify-center text-gray-800"
+        className="fixed bottom-2 right-2 w-6 h-6 opacity-20 hover:opacity-100 z-[9999] cursor-help flex items-center justify-center text-white bg-white/10 rounded-full transition-all"
       >
         <Bug size={12} />
       </button>
@@ -74,7 +68,22 @@ function AppStatusDebugger() {
 function DashboardContent() {
   const { state, actions } = useStudio();
 
-  // Calculate selected files for the Process button
+  // Calculate only processing/queued videos for the top progress bar
+  const processingVideos = useMemo(() => {
+    const active: VideoFile[] = [];
+    const traverse = (list: VideoFile[]) => {
+      list.forEach(item => {
+        if (!item.is_directory && (item.status === 'processing' || item.status === 'queued')) {
+          active.push(item);
+        }
+        if (item.children) traverse(item.children);
+      });
+    };
+    traverse(state.items);
+    return active;
+  }, [state.items]);
+
+  // Selected videos for the "Start Process" button in Sidebar
   const selectedFilesList = useMemo(() => {
     const selected: VideoFile[] = [];
     const traverse = (list: VideoFile[]) => {
@@ -95,7 +104,9 @@ function DashboardContent() {
       />
 
       <main className="flex-1 relative flex flex-col overflow-hidden">
-        <GlobalProgress />
+        {/* Pass props explicitly to GlobalProgress to ensure it wakes up */}
+        <GlobalProgress videos={processingVideos} logs={state.logs} />
+        
         <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
           <VideoList videos={state.items} />
         </div>
@@ -170,6 +181,11 @@ export default function DashboardPage() {
   }, [updateVideoInList]);
 
   const actions = useMemo(() => ({
+    // FIX: Added navigate function that VideoList was looking for
+    navigate: (path: string) => {
+      setState(prev => ({ ...prev, currentPath: path }));
+    },
+
     setSettings: (updates: Partial<GlobalSettings>) => 
       setState(prev => ({ ...prev, settings: { ...prev.settings, ...updates } })),
 
@@ -232,7 +248,7 @@ export default function DashboardPage() {
       try { await api.startJob(payload); } 
       catch (err) { targetVideos.forEach(v => updateVideoInList(v.id, { status: 'error' })); }
     }
-  }), [state.settings, state.currentPath, subscribeToUpdates, updateVideoInList]);
+  }), [state.currentPath, state.settings, subscribeToUpdates, updateVideoInList]);
 
   useEffect(() => {
     setMounted(true);
@@ -240,7 +256,6 @@ export default function DashboardPage() {
     return () => Object.values(activeListeners.current).forEach(es => es.close());
   }, [actions]);
 
-  // Prevent Hydration Mismatch
   if (!mounted) return <div className="h-screen w-full bg-black" />;
 
   return (
