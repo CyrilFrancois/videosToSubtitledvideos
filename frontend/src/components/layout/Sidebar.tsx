@@ -6,12 +6,12 @@ import {
   Folder, Play, Trash2, Volume2, Text,
   Check, Loader2, ChevronDown, Cpu, Zap, Settings, ShieldAlert
 } from 'lucide-react';
+import { VideoFile } from '@/lib/types';
 
 /**
  * Clean, stateless Language Selector component
  */
 function LanguageDropdown({ label, selected, options, isSingle = false, onToggle }: any) {
-  const { actions } = useStudio();
   const [isOpen, setIsOpen] = React.useState(false);
   
   const displayValue = isSingle 
@@ -67,7 +67,25 @@ export default function Sidebar() {
     return Object.entries(JSON.parse(raw)).map(([label, id]) => ({ id, label }));
   }, []);
 
-  const hasSelection = selectedIds.size > 0;
+  /**
+   * RECURSIVE HELPER: Get all selected VIDEO files
+   * We filter out directories so the count and the processing queue are accurate.
+   */
+  const selectedVideos = useMemo(() => {
+    const list: VideoFile[] = [];
+    const traverse = (files: VideoFile[]) => {
+      files.forEach(file => {
+        if (!file.is_directory && selectedIds.has(file.id)) {
+          list.push(file);
+        }
+        if (file.children) traverse(file.children);
+      });
+    };
+    traverse(items);
+    return list;
+  }, [items, selectedIds]);
+
+  const hasSelection = selectedVideos.length > 0;
 
   return (
     <aside className="w-80 bg-[#0a0a0a] border-r border-white/10 flex flex-col p-6 h-full overflow-y-auto custom-scrollbar">
@@ -100,7 +118,6 @@ export default function Sidebar() {
             <Settings size={12} /> Global Engine
           </div>
 
-          {/* Languages */}
           <div className="space-y-2">
             <LanguageDropdown 
               label="SRC" 
@@ -122,7 +139,6 @@ export default function Sidebar() {
             />
           </div>
 
-          {/* AI Model Select */}
           <div className="space-y-2">
             <label className="text-[10px] text-gray-500 font-bold uppercase flex items-center gap-2">
               <Cpu size={12} /> Whisper Engine
@@ -140,7 +156,6 @@ export default function Sidebar() {
             </select>
           </div>
 
-          {/* Workflow Toggle */}
           <div className="space-y-2">
             <label className="text-[10px] text-gray-500 font-bold uppercase flex items-center gap-2">
               <Zap size={12} /> Pipeline Logic
@@ -156,7 +171,6 @@ export default function Sidebar() {
             </select>
           </div>
 
-          {/* Feature Switches */}
           <div className="space-y-3 pt-4 border-t border-white/5">
             <Switch 
               label="Auto-Mux into MKV" 
@@ -177,14 +191,11 @@ export default function Sidebar() {
       <div className="pt-6 border-t border-white/10">
         <button 
           disabled={!hasSelection || isScanning}
-          onClick={() => {
-            const selectedVideos = state.items.filter(v => state.selectedIds.has(v.id));
-            actions.process(selectedVideos);
-          }}
+          onClick={() => actions.process(selectedVideos)}
           className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-10 disabled:grayscale text-white rounded-xl font-bold text-sm flex items-center justify-center gap-3 transition-all active:scale-[0.98] shadow-2xl shadow-indigo-500/20"
         >
           {isScanning ? <Loader2 size={18} className="animate-spin" /> : <Play size={18} fill="currentColor" />}
-          PROCESS {selectedIds.size} FILES
+          PROCESS {selectedVideos.length} {selectedVideos.length === 1 ? 'FILE' : 'FILES'}
         </button>
       </div>
     </aside>
