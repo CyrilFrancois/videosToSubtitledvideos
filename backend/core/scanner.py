@@ -80,6 +80,7 @@ class VideoScanner:
 
     def scan(self, target_path: str = None, recursive: bool = True) -> List[Dict[str, Any]]:
         scan_target = target_path if target_path else self.base_path
+        logger.info(f"Starting scanning of the mounted folder in .env.")
         
         # Security Guard
         if not os.path.abspath(scan_target).startswith(os.path.abspath(self.base_path)):
@@ -93,7 +94,6 @@ class VideoScanner:
             # Get directory contents once to help with isolation rules
             entries = list(os.scandir(scan_target))
             
-            logger.info(f"Starting scanning of the mounted folder in .env.")
             for entry in entries:
                 if entry.is_dir() and not entry.name.startswith('.'):
                     items.append({
@@ -123,9 +123,9 @@ class VideoScanner:
 
             # Sort: Folders first, then names
             items.sort(key=lambda x: (not x.get("is_directory", False), x["fileName"].lower()))
-            logger.info(f"Finished scanning.")
             
         except Exception as e:
             logger.error(f"Scan failed in {scan_target}: {e}")
-            
+
+        logger.info(f"Finished scanning.") 
         return items

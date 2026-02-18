@@ -97,7 +97,7 @@ export default function GlobalProgress() {
   const currentLogs = activeVideo ? logs[activeVideo.filePath] || logs[activeVideo.id] || [] : [];
 
   // Hide the progress monitor if no videos are selected
-  if (totalCount === 0) return null;
+  //if (totalCount === 0) return null;
 
   return (
     <div className="sticky top-0 z-30 px-8 py-6 bg-gradient-to-b from-[#0a0a0a] via-[#0a0a0a] to-transparent backdrop-blur-sm">
