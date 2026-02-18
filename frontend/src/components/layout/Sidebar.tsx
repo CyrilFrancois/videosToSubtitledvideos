@@ -3,15 +3,15 @@
 import React, { useMemo } from 'react';
 import { useStudio } from '@/app/page';
 import { 
-  Folder, Play, Trash2, Volume2, Text, Eraser,
-  Check, Loader2, ChevronDown, Cpu, Zap, Settings, ShieldAlert
+  Folder, Play, Volume2, Text, Eraser,
+  Check, Loader2, ChevronDown, Cpu, Zap, Settings, Lock
 } from 'lucide-react';
 import { VideoFile } from '@/lib/types';
 
 /**
  * Clean, stateless Language Selector component
  */
-function LanguageDropdown({ label, selected, options, isSingle = false, onToggle }: any) {
+function LanguageDropdown({ label, selected, options, isSingle = false, onToggle, disabled = false }: any) {
   const [isOpen, setIsOpen] = React.useState(false);
   
   const displayValue = isSingle 
@@ -19,20 +19,20 @@ function LanguageDropdown({ label, selected, options, isSingle = false, onToggle
     : selected.map((id: string) => id.toUpperCase()).join(', ') || 'None';
 
   return (
-    <div className="relative">
+    <div className={`relative ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}>
       <button 
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center justify-between w-full px-3 py-2.5 bg-black/40 border border-white/10 rounded-lg text-[11px] hover:border-indigo-500/50 transition-all"
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+        className={`flex items-center justify-between w-full px-3 py-2.5 bg-black/40 border border-white/10 rounded-lg text-[11px] transition-all ${disabled ? 'pointer-events-none' : 'hover:border-indigo-500/50'}`}
       >
         <div className="flex items-center gap-2">
           {label === "SRC" ? <Volume2 size={12} className="text-gray-500" /> : <Text size={12} className="text-gray-500" />}
           <span className="text-gray-500 font-bold">{label}:</span> 
           <span className="text-indigo-400 font-bold truncate">{displayValue}</span>
         </div>
-        <ChevronDown size={12} className={`text-gray-600 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        {disabled ? <Lock size={10} className="text-gray-700" /> : <ChevronDown size={12} className={`text-gray-600 transition-transform ${isOpen ? 'rotate-180' : ''}`} />}
       </button>
 
-      {isOpen && (
+      {isOpen && !disabled && (
         <>
           <div className="fixed inset-0 z-30" onClick={() => setIsOpen(false)} />
           <div className="absolute z-40 w-full mt-1 bg-[#1a1a1a] border border-white/10 rounded-lg shadow-2xl py-1 max-h-48 overflow-y-auto custom-scrollbar">
@@ -62,14 +62,19 @@ export default function Sidebar() {
   const { state, actions } = useStudio();
   const { settings, isScanning, selectedIds, items } = state;
 
+  // Check if any file is currently being processed to lock the UI
+  const isAnyFileProcessing = useMemo(() => {
+    const checkRecursive = (files: VideoFile[]): boolean => {
+      return files.some(f => f.status === 'processing' || (f.children && checkRecursive(f.children)));
+    };
+    return checkRecursive(items);
+  }, [items]);
+
   const availableLanguages = useMemo(() => {
     const raw = process.env.NEXT_PUBLIC_LANGUAGES || '{"English":"en", "French":"fr", "Spanish":"es", "German":"de", "Japanese":"ja"}';
     return Object.entries(JSON.parse(raw)).map(([label, id]) => ({ id, label }));
   }, []);
 
-  /**
-   * RECURSIVE HELPER: Get all selected VIDEO files
-   */
   const selectedVideos = useMemo(() => {
     const list: VideoFile[] = [];
     const traverse = (files: VideoFile[]) => {
@@ -88,42 +93,40 @@ export default function Sidebar() {
 
   return (
     <aside className="w-80 bg-[#0a0a0a] border-r border-white/10 flex flex-col p-6 h-full overflow-y-auto custom-scrollbar">
-      {/* BRANDING */}
       <div className="mb-10 flex items-center justify-between">
         <div>
           <h1 className="text-xl font-black text-white tracking-tighter uppercase italic">SubStudio</h1>
           <div className="h-1 w-8 bg-indigo-600 rounded-full mt-1" />
         </div>
-        <img src="/logo.png" alt="Logo" className="h-10 w-auto brightness-125" />
       </div>
 
       <div className="flex-1 space-y-8">
-        {/* LIBRARY SECTION */}
         <section className="space-y-3">
           <label className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em]">Media Library</label>
           <button 
-            disabled={isScanning}
+            disabled={isScanning || isAnyFileProcessing}
             onClick={actions.scan}
-            className="w-full flex items-center justify-center gap-2 bg-white/5 border border-white/10 p-3 rounded-xl hover:bg-white/10 transition-all text-sm font-medium disabled:opacity-50"
+            className="w-full flex items-center justify-center gap-2 bg-white/5 border border-white/10 p-3 rounded-xl hover:bg-white/10 transition-all text-sm font-medium disabled:opacity-30"
           >
             {isScanning ? <Loader2 size={16} className="animate-spin" /> : <Folder size={16} className="text-indigo-400" />}
             {isScanning ? "Scanning..." : "Sync Files"}
           </button>
         </section>
 
-        {/* ENGINE CONFIGURATION */}
         <section className={`space-y-6 transition-opacity ${isScanning ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
           <div className="flex items-center gap-2 text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em]">
             <Settings size={12} /> Global Engine
           </div>
 
           <div className="space-y-2">
+            {/* Locked to Auto Detect */}
             <LanguageDropdown 
               label="SRC" 
               isSingle 
-              selected={settings.sourceLang} 
-              options={[{id: 'auto', label: 'Auto-Detect'}, ...availableLanguages]}
-              onToggle={(id: string) => actions.setSettings({ sourceLang: [id] })}
+              disabled={true}
+              selected={['auto']} 
+              options={[{id: 'auto', label: 'Auto-Detect'}]}
+              onToggle={() => {}} 
             />
             <LanguageDropdown 
               label="OUT" 
@@ -160,7 +163,7 @@ export default function Sidebar() {
               <Zap size={12} /> Pipeline Logic
             </label>
             <select 
-              value={settings.workflowMode}
+              value={settings.workflowMode || 'hybrid'} 
               onChange={(e) => actions.setSettings({ workflowMode: e.target.value as any })}
               className="w-full bg-black/40 border border-white/10 p-2.5 rounded-lg text-xs font-mono outline-none focus:border-indigo-500 transition-colors cursor-pointer"
             >
@@ -170,39 +173,52 @@ export default function Sidebar() {
             </select>
           </div>
 
-          {/* WORKFLOW OPTIONS */}
           <div className="space-y-3 pt-4 border-t border-white/5">
             <Switch 
               label="Auto-Mux into MKV" 
               checked={settings.shouldMux} 
               onChange={(v: boolean) => actions.setSettings({ shouldMux: v })} 
             />
-            {/* NEW STRIP SUBTITLES OPTION */}
+            {/* Renamed and Colored Red */}
             <Switch 
-              label="Strip Internal Tracks" 
+              label="Delete embedded subtitles" 
               icon={<Eraser size={12} />}
               checked={settings.stripExistingSubs} 
+              danger={true} 
               onChange={(v: boolean) => actions.setSettings({ stripExistingSubs: v })} 
             />
-            <Switch 
-              label="Studio Cleanup (Delete Temp)" 
-              checked={settings.shouldRemoveOriginal} 
-              danger 
-              onChange={(v: boolean) => actions.setSettings({ shouldRemoveOriginal: v })} 
-            />
+            {/* Logic exists but UI is hidden */}
+            <div className="hidden">
+               <Switch 
+                label="Studio Cleanup (Delete Temp)" 
+                checked={settings.shouldRemoveOriginal} 
+                onChange={(v: boolean) => actions.setSettings({ shouldRemoveOriginal: v })} 
+              />
+            </div>
           </div>
         </section>
       </div>
 
-      {/* FOOTER ACTION */}
       <div className="pt-6 border-t border-white/10">
         <button 
-          disabled={!hasSelection || isScanning}
+          disabled={!hasSelection || isScanning || isAnyFileProcessing}
           onClick={() => actions.process(selectedVideos)}
-          className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-10 disabled:grayscale text-white rounded-xl font-bold text-sm flex items-center justify-center gap-3 transition-all active:scale-[0.98] shadow-2xl shadow-indigo-500/20"
+          className={`w-full py-4 rounded-xl font-bold text-sm flex items-center justify-center gap-3 transition-all active:scale-[0.98] shadow-2xl 
+            ${(!hasSelection || isScanning || isAnyFileProcessing) 
+              ? 'bg-white/5 text-gray-600 grayscale opacity-40 cursor-not-allowed shadow-none border border-white/5' 
+              : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-500/20'}`}
         >
-          {isScanning ? <Loader2 size={18} className="animate-spin" /> : <Play size={18} fill="currentColor" />}
-          PROCESS {selectedVideos.length} {selectedVideos.length === 1 ? 'FILE' : 'FILES'}
+          {isAnyFileProcessing ? (
+            <>
+              <Loader2 size={18} className="animate-spin text-indigo-400" />
+              ENGINE BUSY...
+            </>
+          ) : (
+            <>
+              <Play size={18} fill="currentColor" />
+              PROCESS {selectedVideos.length} {selectedVideos.length === 1 ? 'FILE' : 'FILES'}
+            </>
+          )}
         </button>
       </div>
     </aside>
@@ -213,8 +229,12 @@ function Switch({ label, icon, checked, onChange, danger = false }: any) {
   return (
     <label className="flex items-center justify-between cursor-pointer group">
       <div className="flex items-center gap-2">
-        {icon && <span className={checked ? 'text-indigo-400' : 'text-gray-600'}>{icon}</span>}
-        <span className={`text-[11px] ${danger ? 'text-red-400/70 group-hover:text-red-400' : 'text-gray-400 group-hover:text-gray-200'} transition-colors`}>
+        {icon && <span className={checked ? (danger ? 'text-red-500' : 'text-indigo-400') : 'text-gray-600'}>{icon}</span>}
+        <span className={`text-[11px] font-medium transition-colors ${
+          danger 
+            ? (checked ? 'text-red-500' : 'text-red-400/60 group-hover:text-red-400') 
+            : 'text-gray-400 group-hover:text-gray-200'
+        }`}>
           {label}
         </span>
       </div>

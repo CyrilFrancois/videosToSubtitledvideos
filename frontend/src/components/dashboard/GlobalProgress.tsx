@@ -50,8 +50,8 @@ function LogTerminal({ logs }: { logs: string[] }) {
         })
       ) : (
         <div className="flex flex-col items-center justify-center h-full text-gray-700 gap-3">
-          <Cpu size={24} className="animate-pulse opacity-20" />
-          <span className="text-[10px] uppercase tracking-[0.3em] font-bold">Synchronizing Engine Stream...</span>
+          <Cpu size={24} className="opacity-20" />
+          <span className="text-[10px] uppercase tracking-[0.3em] font-bold">System Standby — Awaiting Input</span>
         </div>
       )}
     </div>
@@ -65,12 +65,10 @@ export default function GlobalProgress() {
 
   const { items, logs, selectedIds } = studio.state;
 
-  // 1. Get ONLY selected video files across the entire tree
   const selectedVideos = useMemo(() => {
     const selected: VideoFile[] = [];
     const traverse = (list: VideoFile[]) => {
       list.forEach(item => {
-        // Only count if it's a video AND its ID is in the selected set
         if (!item.is_directory && selectedIds.has(item.id)) {
           selected.push(item);
         }
@@ -81,7 +79,6 @@ export default function GlobalProgress() {
     return selected;
   }, [items, selectedIds]);
 
-  // 2. Derive stats from the selected subset
   const activeItems = useMemo(() => 
     selectedVideos.filter(v => ['processing', 'queued'].includes(v.status || '')),
   [selectedVideos]);
@@ -92,12 +89,8 @@ export default function GlobalProgress() {
   const isProcessing = activeItems.length > 0;
   const globalPercentage = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
 
-  // Prioritize the log stream of the first active video in the selection
   const activeVideo = activeItems[0];
   const currentLogs = activeVideo ? logs[activeVideo.filePath] || logs[activeVideo.id] || [] : [];
-
-  // Hide the progress monitor if no videos are selected
-  //if (totalCount === 0) return null;
 
   return (
     <div className="sticky top-0 z-30 px-8 py-6 bg-gradient-to-b from-[#0a0a0a] via-[#0a0a0a] to-transparent backdrop-blur-sm">
@@ -123,12 +116,12 @@ export default function GlobalProgress() {
              <div className={`flex items-center gap-2 px-4 py-1.5 rounded-full border text-[10px] font-black tracking-widest transition-all duration-500 ${
                isProcessing 
                 ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-400 shadow-[0_0_15px_rgba(99,102,241,0.1)]' 
-                : 'bg-emerald-500/5 border-emerald-500/20 text-emerald-500/60'
+                : 'bg-white/5 border-white/10 text-gray-500'
              }`}>
                {isProcessing ? (
                  <> <Zap size={10} className="fill-current" /> PROCESSING </>
                ) : (
-                 <> <CheckCircle2 size={10} /> READY FOR BATCH </>
+                 <> <CheckCircle2 size={10} /> {totalCount > 0 ? 'READY FOR BATCH' : 'IDLE'} </>
                )}
              </div>
              
@@ -156,23 +149,21 @@ export default function GlobalProgress() {
           )}
         </div>
 
-        {/* Terminal Section */}
-        {isProcessing && (
-          <div className="mt-6 animate-in fade-in slide-in-from-top-4 duration-500">
-            <div className="flex items-center justify-between px-1">
-              <div className="flex items-center gap-2 text-[10px] font-bold text-gray-500 uppercase tracking-widest">
-                <Terminal size={12} className="text-indigo-500" />
-                Live Execution Logs
-              </div>
-              <div className="flex gap-4">
-                <div className="text-[9px] font-mono text-gray-600 uppercase">
-                  Buffer: <span className="text-indigo-400/60">{currentLogs.length} Lines</span>
-                </div>
-              </div>
+        {/* Terminal Section — Always Visible */}
+        <div className="mt-6 animate-in fade-in slide-in-from-top-4 duration-500">
+          <div className="flex items-center justify-between px-1">
+            <div className="flex items-center gap-2 text-[10px] font-bold text-gray-500 uppercase tracking-widest">
+              <Terminal size={12} className={isProcessing ? "text-indigo-500" : "text-gray-600"} />
+              System Execution Logs
             </div>
-            <LogTerminal logs={currentLogs} />
+            {currentLogs.length > 0 && (
+              <div className="text-[9px] font-mono text-gray-600 uppercase">
+                Buffer: <span className="text-indigo-400/60">{currentLogs.length} Lines</span>
+              </div>
+            )}
           </div>
-        )}
+          <LogTerminal logs={currentLogs} />
+        </div>
       </div>
     </div>
   );

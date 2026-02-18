@@ -187,6 +187,7 @@ class PipelineOrchestrator:
                     pass
             
             logging.getLogger().removeHandler(log_handler)
+        logger.info(f"✅ All video files subtitled.")
 
 # --- LIFESPAN ---
 orchestrator = None
