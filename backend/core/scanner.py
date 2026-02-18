@@ -105,7 +105,7 @@ class VideoScanner:
                     })
                 
                 elif entry.is_file() and entry.name.lower().endswith(self.supported_extensions):
-                    logger.info(f"🔍 Scanning: {entry.name}")
+                    logger.info(f"Scanning: {entry.name}")
                     sub_info = self._get_subtitle_meta(entry, entries)
                     
                     items.append({

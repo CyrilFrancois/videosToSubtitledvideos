@@ -16,7 +16,7 @@ class SubtitleTranslator:
         Research Phase: Identifies the show/movie to ensure character names 
         and gender-specific grammar are correct.
         """
-        logger.info(f"   🔍 Analyzing filename context: {filename}")
+        logger.info(f"   AI searching filename context: {filename}")
         
         prompt = f"""Identify the media from this filename: '{filename}'
         Return a 'Story Bible' for a translator:
@@ -80,7 +80,7 @@ class SubtitleTranslator:
             # Terminal logging every 20%
             completion_pct = int((current_batch_idx / total_batches) * 100)
             if completion_pct >= last_logged_pct + 20:
-                logger.info(f"      {prefix} Translation Progress ({target_lang.upper()}): {completion_pct}%")
+                logger.info(f"      Translation Progress ({target_lang.upper()}): {completion_pct}%")
                 last_logged_pct = (completion_pct // 20) * 20
 
             system_prompt = self._build_system_prompt(target_lang, context_profile, is_whisper_source)

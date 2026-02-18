@@ -62,7 +62,7 @@ class PipelineOrchestrator:
         log_handler = setup_logging_bridge(fid)
         start_time = time.time()
         
-        # Standardized prefix for logs: [1/5 Files]
+        # Consistent prefix for all logs
         p = f"[{index + 1}/{total} Files]"
         
         logger.info(f"🚀 {p} STARTING: {video.name}")
@@ -72,6 +72,7 @@ class PipelineOrchestrator:
             event_manager.emit(fid, "processing", 5, f"{p} Step 1/5: Analyzing context...")
             logger.info(f"   {p} 🔍 Step 1/5: Analyzing context...")
             context = self.translator.get_context_profile(video.name)
+            logger.info("Context: " + context)
 
             # STEP 2: SOURCE (Transcription)
             srt_content = ""
@@ -84,7 +85,6 @@ class PipelineOrchestrator:
                     logger.info(f"   {p} ✅ Found local SRT.")
 
             if not srt_content:
-                # Pass current/total to transcriber for internal percentage logging
                 logger.info(f"   {p} 🎙️ Step 2/5: Running Whisper inference...")
                 srt_content = self.transcriber.transcribe(
                     video_path=video.path, 
@@ -108,7 +108,7 @@ class PipelineOrchestrator:
                 event_manager.emit(fid, "processing", progress, f"{p} Step 4/5: Translating to {lang_code.upper()}...")
                 logger.info(f"   {p} 🌐 Step 4/5: Translating to [{lang_code}]...")
                 
-                # Translation logic with its own internal looping
+                # FIX: Pass current_file and total_files to avoid TypeError
                 translation = self.translator.refine_and_translate(
                     srt_content=srt_content,
                     target_lang=lang_code,
@@ -116,6 +116,8 @@ class PipelineOrchestrator:
                     on_progress=event_manager.emit,
                     task_manager=type('Task', (object,), {'is_aborted': False}),
                     context_profile=context,
+                    current_file=index + 1,
+                    total_files=total,
                     is_whisper_source=is_whisper
                 )
                 translated_map[lang_code] = translation
@@ -128,7 +130,6 @@ class PipelineOrchestrator:
 
             # STEP 5: MUXING
             if opts.muxIntoMkv:
-                # Pass current/total to muxer for proper tagging and logging
                 self.muxer.mux(
                     video_path=video.path,
                     srts=translated_map,

@@ -77,6 +77,7 @@ Access the Dashboard: Open http://localhost:3000 to start processing your librar
 Distributed under the MIT License. See LICENSE for more information.
 
 ## 📂 Project Structure
+backend/core/events.py muxer.py scanner.py subtitle_processor.py transcriber.py translator.py main.py
 
 ```text
 # SubStudio Project Structure
