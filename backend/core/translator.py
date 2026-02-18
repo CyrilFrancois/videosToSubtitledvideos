@@ -9,14 +9,14 @@ logger = logging.getLogger("SubStudio.Translator")
 class SubtitleTranslator:
     def __init__(self, api_key: str = None):
         self.client = OpenAI(api_key=api_key or os.getenv("OPENAI_API_KEY"))
-        self.model = "gpt-4o-mini" # High intelligence, low latency
+        self.model = "gpt-4o-mini"  # High intelligence, low latency
 
     def get_context_profile(self, filename: str) -> str:
         """
         Research Phase: Identifies the show/movie to ensure character names 
-        and gender-specific grammar (especially for FR/ES/DE) are correct.
+        and gender-specific grammar are correct.
         """
-        logger.info(f"🔍 Analyzing filename context: {filename}")
+        logger.info(f"   🔍 Analyzing filename context: {filename}")
         
         prompt = f"""Identify the media from this filename: '{filename}'
         Return a 'Story Bible' for a translator:
@@ -34,7 +34,7 @@ class SubtitleTranslator:
             )
             return response.choices[0].message.content.strip()
         except Exception as e:
-            logger.error(f"❌ Context Research failed: {e}")
+            logger.error(f"   ❌ Context Research failed: {e}")
             return "Neutral media content. No specific character data."
 
     def refine_and_translate(
@@ -45,42 +45,52 @@ class SubtitleTranslator:
         on_progress: Callable, 
         task_manager: Any,
         context_profile: str,
+        current_file: int,
+        total_files: int,
         is_whisper_source: bool = False
     ) -> str:
         """
         Processes the SRT in batches to avoid token limits and maintain format.
+        Includes terminal logging for every 20% of progress.
         """
-        # Split into blocks, but keep empty lines to maintain integrity
         blocks = srt_content.strip().split('\n\n')
         batch_size = 30 
         results = []
         total_batches = (len(blocks) + batch_size - 1) // batch_size
+        
+        prefix = f"[{current_file}/{total_files} Files]"
+        logger.info(f"   🌐 {prefix} Step 4/5: Translating {len(blocks)} blocks into {target_lang.upper()}...")
 
-        logger.info(f"🌐 Translating {len(blocks)} blocks into {target_lang}...")
+        last_logged_pct = -1
 
         for i in range(0, len(blocks), batch_size):
             if task_manager.is_aborted:
-                logger.warning("🛑 Translation aborted by user.")
+                logger.warning(f"   🛑 {prefix} Translation aborted by user.")
                 return ""
 
             batch = blocks[i : i + batch_size]
             batch_text = "\n\n".join(batch)
-            current_batch = (i // batch_size) + 1
+            current_batch_idx = (i // batch_size) + 1
             
-            # Progress tracking for Frontend
-            progress_pct = 10 + int((current_batch / total_batches) * 85)
+            # Progress calculation for Frontend (stays within Step 4 range)
+            progress_pct = 40 + int((current_batch_idx / total_batches) * 40)
             on_progress(file_id, "translating", progress_pct, 
-                        f"Translating {target_lang.upper()} (Batch {current_batch}/{total_batches})")
+                        f"{prefix} Step 4/5: Translating {target_lang.upper()} ({current_batch_idx}/{total_batches})")
+
+            # Terminal logging every 20%
+            completion_pct = int((current_batch_idx / total_batches) * 100)
+            if completion_pct >= last_logged_pct + 20:
+                logger.info(f"      {prefix} Translation Progress ({target_lang.upper()}): {completion_pct}%")
+                last_logged_pct = (completion_pct // 20) * 20
 
             system_prompt = self._build_system_prompt(target_lang, context_profile, is_whisper_source)
 
             try:
-                # Retry logic for API hiccups
                 translated_batch = self._call_llm(system_prompt, batch_text)
                 results.append(translated_batch)
             except Exception as e:
-                logger.error(f"❌ Batch {current_batch} failed: {e}")
-                results.append(batch_text) # Fallback to original so the file isn't empty
+                logger.error(f"   ❌ {prefix} Batch {current_batch_idx} failed: {e}")
+                results.append(batch_text) # Fallback to original
 
         return "\n\n".join(results)
 
@@ -94,10 +104,10 @@ class SubtitleTranslator:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_content}
                     ],
-                    temperature=0.2 # Lower temperature = more consistent SRT format
+                    temperature=0.2 
                 )
                 content = response.choices[0].message.content.strip()
-                # Remove any markdown code block wrappers if the AI adds them
+                # Clean up AI formatting artifacts
                 return content.replace("```srt", "").replace("```", "").strip()
             except Exception as e:
                 if attempt == retries: raise e

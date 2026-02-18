@@ -2,7 +2,7 @@ import ffmpeg
 import os
 import logging
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict
 
 logger = logging.getLogger("SubStudio.Muxer")
 
@@ -19,12 +19,16 @@ class VideoMuxer:
         self, 
         video_path: str, 
         srts: Dict[str, str], 
+        current_file: int,
+        total_files: int,
         strip_existing: bool = False,
         cleanup_original: bool = False
     ) -> str:
         video_input_path = Path(video_path)
-        # Using .mkv as the default container for better subtitle support
         output_path = str(video_input_path.parent / f"{video_input_path.stem}_SubStudio.mkv")
+        
+        # Consistent prefix for logging
+        prefix = f"[{current_file}/{total_files} Files]"
         
         main_input = ffmpeg.input(video_path)
         input_streams = [main_input]
@@ -54,18 +58,20 @@ class VideoMuxer:
                 'scodec': 'srt'
             }
 
-            # 4. Apply metadata (Corrected for FFmpeg 7.1 syntax)
-            # In FFmpeg, 'title' for a specific stream is also a metadata key.
+            # 4. Apply metadata (Fixing "Track 1" issue)
+            # We must pass these as separate dictionary entries. 
+            # Note: Indexing 's:s:i' refers to the i-th subtitle stream in the OUTPUT.
             for i, lang_code in enumerate(srts.keys()):
                 iso_lang = self.lang_map.get(lang_code.lower(), lang_code)
                 
-                # Use the 'metadata:s:s:i' prefix for all stream-level tags
-                output_args[f'metadata:s:s:{i}'] = [
-                    f'language={iso_lang}',
-                    f'title=AI-{lang_code.upper()}'
-                ]
+                # To ensure FFmpeg picks up both, we combine them into a single metadata call 
+                # or use the positional index logic. Most reliable for Track Names:
+                output_args[f'metadata:s:s:{i}'] = f"language={iso_lang}"
+                # We use a separate key for the title to prevent overwriting
+                output_args[f'metadata:s:s:{i}+title'] = f"AI {lang_code.upper()}"
 
-            logger.info(f"🛠️ FFmpeg: Muxing into {video_input_path.name}")
+            logger.info(f"🛠️ {prefix} Step 5/5: Finalizing MKV container...")
+            logger.info(f"   {prefix} Muxing {len(srts)} subtitle tracks into {video_input_path.name}")
             
             (
                 ffmpeg
@@ -80,7 +86,7 @@ class VideoMuxer:
 
             if cleanup_original:
                 if os.path.exists(output_path) and str(video_input_path) != output_path:
-                    logger.info(f"🧹 Removing original: {video_input_path.name}")
+                    logger.info(f"   {prefix} Cleanup: Removing original file.")
                     video_input_path.unlink()
 
             return output_path
@@ -89,5 +95,5 @@ class VideoMuxer:
             err = e.stderr.decode() if e.stderr else str(e)
             for p in tmp_srt_paths:
                 if p.exists(): p.unlink()
-            logger.error(f"❌ FFmpeg Error: {err}")
+            logger.error(f"❌ {prefix} FFmpeg Muxing Error: {err}")
             raise Exception(f"Muxing failed: {err}")

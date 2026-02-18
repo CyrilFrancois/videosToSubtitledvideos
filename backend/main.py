@@ -2,7 +2,7 @@ import logging
 import os
 import time
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, BackgroundTasks, Query, Response
+from fastapi import FastAPI, BackgroundTasks, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -62,18 +62,18 @@ class PipelineOrchestrator:
         log_handler = setup_logging_bridge(fid)
         start_time = time.time()
         
-        # Consistent prefix for logs
-        p = f"[{index + 1}/{total}]"
+        # Standardized prefix for logs: [1/5 Files]
+        p = f"[{index + 1}/{total} Files]"
         
         logger.info(f"🚀 {p} STARTING: {video.name}")
 
         try:
             # STEP 1: CONTEXT
             event_manager.emit(fid, "processing", 5, f"{p} Step 1/5: Analyzing context...")
-            logger.info(f"   {p} 🔍 Step 1: Analyzing context...")
+            logger.info(f"   {p} 🔍 Step 1/5: Analyzing context...")
             context = self.translator.get_context_profile(video.name)
 
-            # STEP 2: SOURCE
+            # STEP 2: SOURCE (Transcription)
             srt_content = ""
             is_whisper = True
             if video.workflowMode == "srt":
@@ -84,24 +84,31 @@ class PipelineOrchestrator:
                     logger.info(f"   {p} ✅ Found local SRT.")
 
             if not srt_content:
-                event_manager.emit(fid, "processing", 15, f"{p} Step 2/5: AI Transcribing...")
-                logger.info(f"   {p} 🎙️ Step 2: Running Whisper inference...")
-                srt_content = self.transcriber.transcribe(video.path, fid, event_manager.emit)
+                # Pass current/total to transcriber for internal percentage logging
+                logger.info(f"   {p} 🎙️ Step 2/5: Running Whisper inference...")
+                srt_content = self.transcriber.transcribe(
+                    video_path=video.path, 
+                    file_id=fid, 
+                    on_progress=event_manager.emit,
+                    current_file=index + 1,
+                    total_files=total
+                )
 
             # STEP 3: SYNC
             if video.syncOffset != 0:
-                logger.info(f"   {p} ⏱️ Step 3: Applying {video.syncOffset}s offset...")
+                logger.info(f"   {p} ⏱️ Step 3/5: Applying {video.syncOffset}s offset...")
                 srt_content = self.processor.apply_offset(srt_content, video.syncOffset)
             else:
-                logger.info(f"   {p} ⏩ Step 3: Skipping offset.")
+                logger.info(f"   {p} ⏩ Step 3/5: Skipping offset.")
 
             # STEP 4: TRANSLATION
             translated_map = {}
             for i, lang_code in enumerate(video.out):
-                progress = 40 + (i * 20)
+                progress = 40 + (i * (40 // len(video.out)))
                 event_manager.emit(fid, "processing", progress, f"{p} Step 4/5: Translating to {lang_code.upper()}...")
-                logger.info(f"   {p} 🌐 Step 4: Translating to [{lang_code}]...")
+                logger.info(f"   {p} 🌐 Step 4/5: Translating to [{lang_code}]...")
                 
+                # Translation logic with its own internal looping
                 translation = self.translator.refine_and_translate(
                     srt_content=srt_content,
                     target_lang=lang_code,
@@ -121,12 +128,12 @@ class PipelineOrchestrator:
 
             # STEP 5: MUXING
             if opts.muxIntoMkv:
-                event_manager.emit(fid, "muxing", 90, f"{p} Step 5/5: Muxing MKV...")
-                logger.info(f"   {p} 🎬 Step 5: Finalizing MKV container...")
-                # Note: If this fails, the error is inside core/muxer.py FFmpeg command string
+                # Pass current/total to muxer for proper tagging and logging
                 self.muxer.mux(
                     video_path=video.path,
                     srts=translated_map,
+                    current_file=index + 1,
+                    total_files=total,
                     strip_existing=video.stripExistingSubs,
                     cleanup_original=opts.cleanUp
                 )
