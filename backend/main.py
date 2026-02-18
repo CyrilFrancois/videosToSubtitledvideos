@@ -72,7 +72,7 @@ class PipelineOrchestrator:
             event_manager.emit(fid, "processing", 5, f"{p} Step 1/5: Analyzing context...")
             logger.info(f"   {p} 🔍 Step 1/5: Analyzing context...")
             context = self.translator.get_context_profile(video.name)
-            logger.info("Context: " + context)
+            #logger.info("Context: " + context)
 
             # STEP 2: SOURCE (Transcription)
             srt_content = ""
