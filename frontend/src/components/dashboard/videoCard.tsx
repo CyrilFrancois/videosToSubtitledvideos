@@ -4,22 +4,17 @@ import React, { useState } from 'react';
 import { useStudio } from '@/app/page';
 import SubImportModal from './SubImportModal';
 import { 
-  Volume2, Text, Link as LinkIcon, Clock, Cpu, 
-  Check, Play, Loader2, FileText, Globe, ChevronDown, Layers, Lock 
+  Check, Loader2, FileText, ChevronDown, Layers, Lock 
 } from 'lucide-react';
 import { ProcessingStatus } from '@/lib/types';
 
 export default function VideoCard({ video }: { video: any }) {
   const { state, actions } = useStudio();
-  const [showOffsets, setShowOffsets] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   // --- DATA EXTRACTION ---
-  const sourceLang = video.sourceLang || ['auto'];
   const targetLanguages = video.targetLanguages || ['fr'];
   const workflowMode = video.workflowMode || 'hybrid';
-  
-  const syncOffset = typeof video.syncOffset === 'number' ? video.syncOffset : 0;
   const stripExistingSubs = video.stripExistingSubs ?? state.settings.stripExistingSubs;
 
   // --- UI STATE ---
@@ -104,37 +99,29 @@ export default function VideoCard({ video }: { video: any }) {
       </div>
 
       {/* CONTROLS SECTION */}
-      <div className="px-4 pb-4 grid grid-cols-12 gap-4">
+      <div className="px-4 pb-4 grid grid-cols-12 gap-4 items-end">
         
-        {/* SOURCE LANG - LOCKED TO AUTO */}
-        <div className="col-span-2 space-y-1">
-          <span className="text-[8px] font-bold text-gray-600 uppercase">Input</span>
-          <div className="relative">
-            <button 
-              disabled 
-              className="w-full flex items-center justify-between bg-black/20 border border-white/5 p-2 rounded text-[10px] text-indigo-400/50 font-mono uppercase cursor-not-allowed"
-            >
-              AUTO
-              <Lock size={10} className="text-gray-700" />
-            </button>
-            {/* The dropdown code remains in the codebase (hidden) for future dev */}
-            <div className="hidden absolute top-full left-0 mt-1 grid-cols-2 gap-1 bg-[#161616] border border-white/10 p-2 rounded z-[110] shadow-2xl w-24">
-              {["auto", ...langList].map(l => (
-                <button key={l} className="text-[10px] p-1 hover:bg-indigo-600 rounded text-gray-300 font-mono uppercase">{l}</button>
-              ))}
-            </div>
-          </div>
+        {/* SOURCE LANG - LOCKED */}
+        <div className="col-span-2 space-y-1.5">
+          <span className="text-[8px] font-bold text-gray-600 uppercase tracking-tighter">Input</span>
+          <button 
+            disabled 
+            className="w-full flex items-center justify-between bg-white/[0.02] border border-white/5 p-2 rounded text-[10px] text-gray-600 font-mono uppercase cursor-not-allowed h-8"
+          >
+            AUTO
+            <Lock size={10} />
+          </button>
         </div>
 
         {/* OUTPUT LANGS */}
-        <div className="col-span-2 space-y-1">
-          <span className="text-[8px] font-bold text-gray-600 uppercase">Output</span>
+        <div className="col-span-2 space-y-1.5">
+          <span className="text-[8px] font-bold text-gray-600 uppercase tracking-tighter">Output</span>
           <div className="relative group/multiselect">
-            <button className="w-full flex items-center justify-between bg-black/40 border border-white/5 p-2 rounded text-[10px] text-indigo-400 font-mono uppercase truncate">
+            <button className="w-full flex items-center justify-between bg-black/40 border border-white/5 p-2 rounded text-[10px] text-indigo-400 font-mono uppercase truncate h-8">
               {targetLanguages.join(',')}
               <ChevronDown size={10} />
             </button>
-            <div className="absolute top-full left-0 mt-1 hidden group-hover/multiselect:grid grid-cols-3 gap-1 bg-[#161616] border border-white/10 p-2 rounded z-[110] shadow-2xl w-36">
+            <div className="absolute bottom-full left-0 mb-1 hidden group-hover/multiselect:grid grid-cols-3 gap-1 bg-[#161616] border border-white/10 p-2 rounded z-[110] shadow-2xl w-36">
               {langList.map(l => (
                 <button 
                   key={l} 
@@ -149,18 +136,18 @@ export default function VideoCard({ video }: { video: any }) {
         </div>
 
         {/* WORKFLOW SWITCH */}
-        <div className="col-span-3 space-y-1">
-          <span className="text-[8px] font-bold text-gray-600 uppercase">Workflow</span>
-          <div className="flex gap-1">
+        <div className="col-span-3 space-y-1.5">
+          <span className="text-[8px] font-bold text-gray-600 uppercase tracking-tighter">Workflow</span>
+          <div className="flex gap-1 h-8">
             <button 
               onClick={() => setIsModalOpen(true)}
-              className={`flex-1 py-1.5 rounded text-[9px] font-bold uppercase transition-all ${isSourceActive ? 'bg-indigo-600 text-white' : 'bg-white/5 text-gray-600'}`}
+              className={`flex-1 rounded text-[9px] font-bold uppercase transition-all ${isSourceActive ? 'bg-indigo-600 text-white' : 'bg-white/5 text-gray-600 hover:text-gray-400'}`}
             >
               SRT
             </button>
             <button 
               onClick={() => actions.updateVideoData(video.id, { workflowMode: 'whisper' })}
-              className={`flex-1 py-1.5 rounded text-[9px] font-bold uppercase transition-all ${isWhisperActive ? 'bg-indigo-600 text-white' : 'bg-white/5 text-gray-600'}`}
+              className={`flex-1 rounded text-[9px] font-bold uppercase transition-all ${isWhisperActive ? 'bg-indigo-600 text-white' : 'bg-white/5 text-gray-600 hover:text-gray-400'}`}
             >
               Whisper
             </button>
@@ -168,14 +155,14 @@ export default function VideoCard({ video }: { video: any }) {
         </div>
 
         {/* STRIP OVERRIDE */}
-        <div className="col-span-2 space-y-1">
-          <span className="text-[8px] font-bold text-gray-600 uppercase">Internal Subs</span>
+        <div className="col-span-2 space-y-1.5">
+          <span className="text-[8px] font-bold text-gray-600 uppercase tracking-tighter">Internal Subs</span>
           <button 
             onClick={() => actions.updateVideoData(video.id, { stripExistingSubs: !stripExistingSubs })}
-            className={`w-full flex items-center justify-center gap-2 py-1.5 rounded text-[9px] font-bold uppercase transition-all border ${
+            className={`w-full flex items-center justify-center gap-2 rounded text-[9px] font-bold uppercase transition-all border h-8 ${
               stripExistingSubs 
-              ? 'bg-red-500/10 border-red-500/40 text-red-400' 
-              : 'bg-white/5 border-white/5 text-gray-500'
+              ? 'bg-red-500/10 border-red-500/30 text-red-400' 
+              : 'bg-white/5 border-white/5 text-gray-500 hover:text-gray-400'
             }`}
           >
             <Layers size={10} />
@@ -183,60 +170,26 @@ export default function VideoCard({ video }: { video: any }) {
           </button>
         </div>
 
-        {/* ACTIONS */}
-        <div className="col-span-3 flex flex-col justify-end gap-1">
-          {/* SYNC OPTION HIDDEN BUT KEPT IN CODE */}
-          <button 
-            className="hidden text-[9px] font-bold uppercase items-center justify-center gap-1 transition-colors text-gray-500"
-          >
-            <Clock size={10} /> Sync
-          </button>
-          
+        {/* PROCESS ACTION */}
+        <div className="col-span-3">
           <button 
             disabled={isProcessing}
             onClick={() => actions.process([video])}
-            className={`w-full py-1.5 rounded font-bold text-[10px] uppercase transition-all ${
+            className={`w-full h-8 rounded font-black text-[10px] uppercase transition-all ${
               isProcessing 
-              ? 'bg-white/5 text-gray-600 cursor-not-allowed' 
-              : 'bg-indigo-600 hover:bg-indigo-500 text-white active:scale-[0.98]'
+              ? 'bg-indigo-500/10 text-indigo-400/50 cursor-not-allowed border border-indigo-500/20' 
+              : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/10 active:scale-[0.97]'
             }`}
           >
-            {isProcessing ? 'Processing' : 'Process'}
+            {isProcessing ? 'Processing...' : 'Start Process'}
           </button>
         </div>
       </div>
 
-      {/* OFFSET CONTROLLER - Logic kept but visual trigger hidden above */}
-      {showOffsets && (
-        <div className="px-4 py-3 bg-indigo-500/5 border-t border-white/5 flex justify-center">
-          <div className="flex items-center gap-3 bg-black border border-white/10 px-4 py-1 rounded-full">
-            <button 
-              onClick={() => actions.updateVideoData(video.id, { syncOffset: Math.round((syncOffset - 0.1) * 10) / 10 })} 
-              className="text-indigo-400 font-bold hover:text-white px-1"
-            >
-              -
-            </button>
-            <input 
-              type="number" step="0.1"
-              value={syncOffset}
-              onChange={(e) => actions.updateVideoData(video.id, { syncOffset: parseFloat(e.target.value) || 0 })}
-              className="bg-transparent text-center text-xs font-mono text-indigo-400 w-12 outline-none"
-            />
-            <button 
-              onClick={() => actions.updateVideoData(video.id, { syncOffset: Math.round((syncOffset + 0.1) * 10) / 10 })} 
-              className="text-indigo-400 font-bold hover:text-white px-1"
-            >
-              +
-            </button>
-            <span className="text-[9px] text-gray-600 font-black uppercase">Sec</span>
-          </div>
-        </div>
-      )}
-
       {/* PROGRESS BAR */}
       {isProcessing && (
         <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/5 rounded-b-xl overflow-hidden">
-          <div className="h-full bg-indigo-500 transition-all duration-500" style={{ width: `${video.progress}%` }} />
+          <div className="h-full bg-indigo-500 transition-all duration-1000 ease-out" style={{ width: `${video.progress}%` }} />
         </div>
       )}
 
