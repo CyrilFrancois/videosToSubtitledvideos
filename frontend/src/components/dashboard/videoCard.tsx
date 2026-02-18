@@ -28,7 +28,8 @@ export default function VideoCard({ video }: { video: any }) {
     language: null 
   };
   
-  const effectiveWorkflow = !subInfo.hasSubtitles ? 'whisper' : workflowMode;
+  // Decide if we are currently using Speech Recognition or an SRT source
+  const effectiveWorkflow = video.workflowMode || (subInfo.hasSubtitles ? 'srt' : 'whisper');
   const isWhisperActive = effectiveWorkflow === 'whisper';
   const isSourceActive = !isWhisperActive;
 
@@ -51,6 +52,12 @@ export default function VideoCard({ video }: { video: any }) {
     }
   };
 
+  // Helper to get just the filename from a full path for the tooltip
+  const getSrtDisplayPath = () => {
+    if (!subInfo.externalPath) return 'Embedded Stream';
+    return subInfo.externalPath.split('/').pop();
+  };
+
   return (
     <div className={`group relative mb-3 bg-[#0d0d0d] border rounded-xl transition-all duration-300 ${
       isSelected ? 'border-indigo-500/50 shadow-[0_0_20px_rgba(79,70,229,0.1)]' : 'border-white/5 hover:border-white/10'
@@ -69,8 +76,12 @@ export default function VideoCard({ video }: { video: any }) {
           
           {subInfo.hasSubtitles && (
             <div className="relative group/tooltip flex shrink-0">
-              <span className="flex items-center gap-1 bg-indigo-500/10 text-indigo-400 text-[9px] font-bold px-2 py-0.5 rounded uppercase border border-indigo-500/20 cursor-help">
-                <Check size={10} /> {subInfo.subType}
+              <span className={`flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded uppercase border cursor-help transition-colors ${
+                subInfo.subType === 'manual' 
+                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
+                : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
+              }`}>
+                <Check size={10} /> {subInfo.subType === 'manual' ? 'Imported SRT' : subInfo.subType}
               </span>
 
               {/* TOOLTIP */}
@@ -78,12 +89,17 @@ export default function VideoCard({ video }: { video: any }) {
                 <div className="bg-[#161616] border border-white/10 p-3 rounded-lg shadow-2xl w-64 backdrop-blur-xl">
                   <div className="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
                     <FileText size={12} className="text-indigo-400" />
-                    <span className="text-[10px] font-bold text-white uppercase">Subtitle Meta</span>
+                    <span className="text-[10px] font-bold text-white uppercase">Subtitle Source</span>
                   </div>
                   <div className="space-y-1.5 text-[10px]">
-                    <div className="flex justify-between"><span className="text-gray-500">Lang:</span><span className="text-indigo-300 font-mono">{subInfo.language || 'AUTO'}</span></div>
-                    <div className="text-gray-500">Source:</div>
-                    <div className="text-gray-400 font-mono break-all leading-tight text-[9px]">{subInfo.externalPath || 'Embedded'}</div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Status:</span>
+                      <span className="text-emerald-400 font-bold uppercase">Ready</span>
+                    </div>
+                    <div className="text-gray-500">Linked File:</div>
+                    <div className="text-indigo-300 font-mono break-all leading-tight text-[9px] bg-white/5 p-1.5 rounded">
+                      {getSrtDisplayPath()}
+                    </div>
                   </div>
                   <div className="absolute top-full left-4 w-2 h-2 bg-[#161616] border-r border-b border-white/10 rotate-45 -translate-y-1" />
                 </div>
@@ -101,7 +117,6 @@ export default function VideoCard({ video }: { video: any }) {
       {/* CONTROLS SECTION */}
       <div className="px-4 pb-4 grid grid-cols-12 gap-4 items-end">
         
-        {/* SOURCE LANG - LOCKED */}
         <div className="col-span-2 space-y-1.5">
           <span className="text-[8px] font-bold text-gray-600 uppercase tracking-tighter">Input</span>
           <button 
@@ -113,7 +128,6 @@ export default function VideoCard({ video }: { video: any }) {
           </button>
         </div>
 
-        {/* OUTPUT LANGS */}
         <div className="col-span-2 space-y-1.5">
           <span className="text-[8px] font-bold text-gray-600 uppercase tracking-tighter">Output</span>
           <div className="relative group/multiselect">
@@ -135,26 +149,24 @@ export default function VideoCard({ video }: { video: any }) {
           </div>
         </div>
 
-        {/* WORKFLOW SWITCH */}
         <div className="col-span-3 space-y-1.5">
-          <span className="text-[8px] font-bold text-gray-600 uppercase tracking-tighter">Workflow</span>
+          <span className="text-[8px] font-bold text-gray-600 uppercase tracking-tighter">Workflow Mode</span>
           <div className="flex gap-1 h-8">
             <button 
               onClick={() => setIsModalOpen(true)}
-              className={`flex-1 rounded text-[9px] font-bold uppercase transition-all ${isSourceActive ? 'bg-indigo-600 text-white' : 'bg-white/5 text-gray-600 hover:text-gray-400'}`}
+              className={`flex-1 rounded text-[9px] font-bold uppercase transition-all ${isSourceActive ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'bg-white/5 text-gray-600 hover:text-gray-400'}`}
             >
-              SRT
+              Use SRT
             </button>
             <button 
               onClick={() => actions.updateVideoData(video.id, { workflowMode: 'whisper' })}
-              className={`flex-1 rounded text-[9px] font-bold uppercase transition-all ${isWhisperActive ? 'bg-indigo-600 text-white' : 'bg-white/5 text-gray-600 hover:text-gray-400'}`}
+              className={`flex-1 rounded text-[9px] font-bold uppercase transition-all ${isWhisperActive ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'bg-white/5 text-gray-600 hover:text-gray-400'}`}
             >
-              Whisper
+              AI Whisper
             </button>
           </div>
         </div>
 
-        {/* STRIP OVERRIDE */}
         <div className="col-span-2 space-y-1.5">
           <span className="text-[8px] font-bold text-gray-600 uppercase tracking-tighter">Internal Subs</span>
           <button 
@@ -170,7 +182,6 @@ export default function VideoCard({ video }: { video: any }) {
           </button>
         </div>
 
-        {/* PROCESS ACTION */}
         <div className="col-span-3">
           <button 
             disabled={isProcessing}
@@ -197,15 +208,21 @@ export default function VideoCard({ video }: { video: any }) {
         isOpen={isModalOpen} 
         onClose={() => setIsModalOpen(false)} 
         videoName={video.fileName}
-        videoPath={video.filePath.substring(0, video.filePath.lastIndexOf('/'))}
-        onFileSelect={async (file, targetName, destinationPath) => {
+        // Extract the directory path correctly
+        videoPath={video.filePath.includes('/') 
+          ? video.filePath.substring(0, video.filePath.lastIndexOf('/'))
+          : '.' 
+        }
+        onFileSelect={async (file, realFileName, destinationPath) => {
           actions.updateVideoData(video.id, { 
             workflowMode: 'srt',
+            statusText: 'SRT Ready',
             subtitleInfo: { 
               hasSubtitles: true, 
               subType: 'manual', 
-              externalPath: `${destinationPath}/${targetName}`,
-              language: 'unknown'
+              // This path is used by the backend to find the file
+              externalPath: `${destinationPath}/${realFileName}`,
+              language: 'User Selected'
             }
           });
         }}

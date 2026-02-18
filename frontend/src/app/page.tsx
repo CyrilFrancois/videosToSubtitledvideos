@@ -78,7 +78,7 @@ function DashboardContent() {
 export default function DashboardPage() {
   const [mounted, setMounted] = useState(false);
   const activeListeners = useRef<Record<string, EventSource>>({});
-  const hasInitialScanned = useRef(false); // Ref to prevent React StrictMode double-triggers
+  const hasInitialScanned = useRef(false);
 
   const [state, setState] = useState<StudioState>({
     items: [],
@@ -89,7 +89,7 @@ export default function DashboardPage() {
     settings: {
       sourceLang: ['auto'],
       targetLanguages: ['fr'], 
-      workflowMode: 'hybrid', // Changed from hybrid to whisper as default
+      workflowMode: 'hybrid', // Explicitly set to Hybrid
       modelSize: 'base',
       autoGenerate: true,
       shouldMux: true,
@@ -112,7 +112,7 @@ export default function DashboardPage() {
     });
   }, []);
 
-  // 2. STABLE SCAN ACTION (Throttled by state)
+  // 2. STABLE SCAN ACTION
   const performScan = useCallback(async (path: string) => {
     if (state.isScanning) return; 
 
@@ -129,6 +129,7 @@ export default function DashboardPage() {
           targetLanguages: prev.settings.targetLanguages,
           workflowMode: prev.settings.workflowMode,
           stripExistingSubs: prev.settings.stripExistingSubs,
+          selectedSrtPath: null, // Initialized as null
           children: f.is_directory ? process(f.children || []) : null
         }));
         return { ...prev, items: process(data.files || []), isScanning: false };
@@ -143,9 +144,12 @@ export default function DashboardPage() {
   const subscribeToUpdates = useCallback((fileId: string) => {
     if (activeListeners.current[fileId]) activeListeners.current[fileId].close();
 
-    const es = createSSEConnection(fileId, (data: SSEEvent) => {
+    // Ensure we URL-encode the fileId to avoid breaks in the connection
+    const encodedId = encodeURIComponent(fileId);
+    
+    const es = createSSEConnection(encodedId, (data: SSEEvent) => {
       if (data.type === 'status') {
-        updateVideoInList(data.fileId, {
+        updateVideoInList(fileId, {
           status: data.status,
           progress: data.progress,
           statusText: data.message 
@@ -203,7 +207,6 @@ export default function DashboardPage() {
     scan: () => performScan(state.currentPath),
 
     process: async (targetVideos: VideoFile[]) => {
-      // Logic protection: Don't re-process files already in 'processing' status
       const videosToStart = targetVideos.filter(v => v.status !== 'processing');
       if (videosToStart.length === 0) return;
       
@@ -211,6 +214,7 @@ export default function DashboardPage() {
         videos: videosToStart.map(v => ({
           name: v.fileName,
           path: v.filePath,
+          selectedSrtPath: v.selectedSrtPath || null, // SENDING CUSTOM SRT
           src: v.sourceLang?.[0] || state.settings.sourceLang[0],
           out: v.targetLanguages || state.settings.targetLanguages,
           workflowMode: v.workflowMode || state.settings.workflowMode,
@@ -225,13 +229,12 @@ export default function DashboardPage() {
         }
       };
 
-      // Set UI state to processing immediately
+      // Set UI state immediately
       videosToStart.forEach(v => {
         updateVideoInList(v.id, { status: 'processing', progress: 5, statusText: 'Initializing...' });
         subscribeToUpdates(v.filePath);
       });
 
-      // API call moved OUTSIDE of setState to prevent side-effect duplication
       try {
         await api.startJob(payload);
       } catch (err) {
@@ -246,8 +249,6 @@ export default function DashboardPage() {
   // 5. LIFECYCLE
   useEffect(() => {
     setMounted(true);
-    
-    // StrictMode Protection: only fire initial scan once per mount
     if (!hasInitialScanned.current) {
       performScan("/data"); 
       hasInitialScanned.current = true;

@@ -1,22 +1,23 @@
 "use client";
 
 import React, { useState, useCallback, useMemo } from 'react';
-import { X, Upload, Globe, FileText, AlertCircle, Loader2 } from 'lucide-react';
+import { X, Upload, Globe, FileText, AlertCircle, Loader2, FileCheck } from 'lucide-react';
 
 interface SubImportModalProps {
   isOpen: boolean;
   onClose: () => void;
   videoName: string; 
   videoPath: string; 
-  // Changed to match the logical flow: we upload the file, then update the UI
-  onFileSelect: (file: File, targetName: string, destinationPath: string) => Promise<string | void>;
+  // destinationPath is the folder where the video lives
+  onFileSelect: (file: File, fileName: string, destinationPath: string) => Promise<string | void>;
 }
 
 export default function SubImportModal({ isOpen, onClose, videoName, videoPath, onFileSelect }: SubImportModalProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
-  // 1. CLEAN FILENAME LOGIC for search providers
+  // Clean filename logic for external search providers only
   const baseName = useMemo(() => {
     return videoName
       .replace(/\.[^/.]+$/, "") 
@@ -40,16 +41,17 @@ export default function SubImportModal({ isOpen, onClose, videoName, videoPath, 
 
     try {
       setIsUploading(true);
-      // The critical pairing: Video.mp4 -> Video.srt
-      const targetSrtName = videoName.replace(/\.[^/.]+$/, ".srt");
+      setSelectedFile(file);
       
-      // Execute the upload action passed from parent
-      await onFileSelect(file, targetSrtName, videoPath);
+      // We pass the ACTUAL file name to the backend/state, not a renamed version
+      // This ensures the badge hover shows the real file name.
+      await onFileSelect(file, file.name, videoPath);
       
       onClose();
     } catch (err) {
       console.error("Upload failed", err);
       alert("Failed to upload subtitle file.");
+      setSelectedFile(null);
     } finally {
       setIsUploading(false);
     }
@@ -88,7 +90,7 @@ export default function SubImportModal({ isOpen, onClose, videoName, videoPath, 
             </div>
             <div>
               <h3 className="text-sm font-bold text-white uppercase tracking-wider">Manual Import</h3>
-              <p className="text-[10px] text-gray-500 font-medium uppercase">Inject external SRT into workspace</p>
+              <p className="text-[10px] text-gray-500 font-medium uppercase">Select custom SRT source</p>
             </div>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-full text-gray-500 hover:text-white">
@@ -97,18 +99,19 @@ export default function SubImportModal({ isOpen, onClose, videoName, videoPath, 
         </div>
 
         <div className="p-6 space-y-6">
-          {/* Target Visualizer */}
+          {/* File Visualizer */}
           <div className="bg-white/[0.02] border border-white/5 rounded-xl p-4">
             <div className="flex items-center gap-2 mb-3">
               <AlertCircle size={12} className="text-indigo-500" />
-              <span className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Target Pairing</span>
+              <span className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Selected Source</span>
             </div>
             <div className="space-y-2">
               <div className="text-[10px] text-gray-500 font-mono truncate">{videoPath}/</div>
-              <div className="text-xs text-indigo-100 font-mono flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
-                {videoName.replace(/\.[^/.]+$/, "")}
-                <span className="text-indigo-500 font-black">.srt</span>
+              <div className="text-xs text-indigo-100 font-mono flex items-center gap-2 overflow-hidden">
+                <div className={`w-1.5 h-1.5 rounded-full ${selectedFile ? 'bg-emerald-500' : 'bg-indigo-500 animate-pulse'}`} />
+                <span className="truncate">
+                  {selectedFile ? selectedFile.name : "Waiting for file selection..."}
+                </span>
               </div>
             </div>
           </div>
@@ -124,10 +127,14 @@ export default function SubImportModal({ isOpen, onClose, videoName, videoPath, 
           >
             {isUploading ? (
               <Loader2 className="mb-3 text-indigo-500 animate-spin" size={32} />
+            ) : selectedFile ? (
+              <FileCheck className="mb-3 text-emerald-500" size={32} />
             ) : (
               <Upload className={`mb-3 transition-transform ${isDragging ? 'translate-y-[-4px] text-indigo-400' : 'text-gray-600'}`} size={32} />
             )}
-            <p className="text-sm text-gray-300 font-bold mb-1">{isUploading ? 'Uploading...' : 'Drop SRT here'}</p>
+            <p className="text-sm text-gray-300 font-bold mb-1">
+              {isUploading ? 'Uploading...' : selectedFile ? 'File verified' : 'Drop SRT here'}
+            </p>
             <p className="text-[10px] text-gray-600 uppercase font-black tracking-widest">or click to browse</p>
             <input 
               type="file" accept=".srt" disabled={isUploading}

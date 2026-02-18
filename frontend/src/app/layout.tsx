@@ -1,7 +1,4 @@
 import './globals.css';
-// import { Inter } from 'next/font/google'; // Comment this out
-
-// const inter = Inter({ subsets: ['latin'] }); // Comment this out
 
 export const metadata = {
   title: 'SubStudio',
@@ -15,8 +12,40 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="dark">
-      {/* Remove inter.className from the body */}
       <body className="bg-black text-white antialiased">
+        {/* Client-side "Anti-Black Screen" Script */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') return;
+                
+                const checkInterval = setInterval(() => {
+                  // A "Black Screen" in dev often means the root div is empty
+                  const root = document.querySelector('body');
+                  const isVisible = document.querySelector('main') || document.querySelector('aside');
+                  
+                  if (!isVisible) {
+                    console.log("SubStudio: Detection active... waiting for compilation.");
+                    
+                    fetch(window.location.href, { method: 'HEAD' })
+                      .then(res => {
+                        if (res.ok) {
+                          // Server is ready, but if we still see nothing, force the reload
+                          console.log("SubStudio: Server ready! Refreshing...");
+                          window.location.reload();
+                        }
+                      })
+                      .catch(() => { /* Server still compiling/restaring */ });
+                  } else {
+                    // Content is visible, we can stop watching
+                    clearInterval(checkInterval);
+                  }
+                }, 3000);
+              })();
+            `,
+          }}
+        />
         {children}
       </body>
     </html>
