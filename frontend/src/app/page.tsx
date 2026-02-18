@@ -89,7 +89,7 @@ export default function DashboardPage() {
     settings: {
       sourceLang: ['auto'],
       targetLanguages: ['fr'], 
-      workflowMode: 'whisper', // Changed from hybrid to whisper as default
+      workflowMode: 'hybrid', // Changed from hybrid to whisper as default
       modelSize: 'base',
       autoGenerate: true,
       shouldMux: true,
