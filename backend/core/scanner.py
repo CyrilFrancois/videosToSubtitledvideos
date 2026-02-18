@@ -93,6 +93,7 @@ class VideoScanner:
             # Get directory contents once to help with isolation rules
             entries = list(os.scandir(scan_target))
             
+            logger.info(f"Starting scanning of the mounted folder in .env.")
             for entry in entries:
                 if entry.is_dir() and not entry.name.startswith('.'):
                     items.append({
@@ -122,6 +123,7 @@ class VideoScanner:
 
             # Sort: Folders first, then names
             items.sort(key=lambda x: (not x.get("is_directory", False), x["fileName"].lower()))
+            logger.info(f"Finished scanning.")
             
         except Exception as e:
             logger.error(f"Scan failed in {scan_target}: {e}")
