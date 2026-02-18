@@ -2,11 +2,12 @@ import logging
 import os
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 from fastapi import FastAPI, BackgroundTasks, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Set
 
 # Core Imports
 from core.scanner import VideoScanner
@@ -56,27 +57,43 @@ class PipelineOrchestrator:
         self.transcriber = VideoTranscriber(model_size="base")
         self.translator = SubtitleTranslator()
         self.muxer = VideoMuxer()
+        # Track active paths to prevent re-processing the same file simultaneously
+        self.active_jobs: Set[str] = set()
+
+    async def run_batch(self, videos: List[VideoJob], opts: GlobalOptions):
+        """Processes a list of videos one by one."""
+        total = len(videos)
+        for idx, video in enumerate(videos):
+            await self.execute_pipeline(video, opts, idx, total)
 
     async def execute_pipeline(self, video: VideoJob, opts: GlobalOptions, index: int, total: int):
         fid = video.path
+        
+        # 1. Prevent duplicate processing
+        if fid in self.active_jobs:
+            logger.warning(f"⚠️ [Skip] {video.name} is already being processed.")
+            return
+        
+        self.active_jobs.add(fid)
         log_handler = setup_logging_bridge(fid)
         start_time = time.time()
-        
-        # Consistent prefix for all logs
         p = f"[{index + 1}/{total} Files]"
+        
+        # Determine temporary audio path (usually same name as video but .wav)
+        temp_audio = Path(video.path).with_suffix(".wav")
         
         logger.info(f"🚀 {p} STARTING: {video.name}")
 
         try:
             # STEP 1: CONTEXT
             event_manager.emit(fid, "processing", 5, f"{p} Step 1/5: Analyzing context...")
-            logger.info(f"   {p} 🔍 Step 1/5: Analyzing context...")
+            logger.info(f"   {p} 🔍 Step 1/4: Analyzing context...")
             context = self.translator.get_context_profile(video.name)
-            #logger.info("Context: " + context)
 
             # STEP 2: SOURCE (Transcription)
             srt_content = ""
             is_whisper = True
+            
             if video.workflowMode == "srt":
                 event_manager.emit(fid, "processing", 10, f"{p} Step 2/5: Checking local subs...")
                 srt_content = self.processor.load_existing_subtitles({"filePath": video.path, "fileName": video.name}, None)
@@ -85,7 +102,7 @@ class PipelineOrchestrator:
                     logger.info(f"   {p} ✅ Found local SRT.")
 
             if not srt_content:
-                logger.info(f"   {p} 🎙️ Step 2/5: Running Whisper inference...")
+                logger.info(f"   {p} 🎙️ Step 2/4: Running Whisper inference...")
                 srt_content = self.transcriber.transcribe(
                     video_path=video.path, 
                     file_id=fid, 
@@ -96,19 +113,16 @@ class PipelineOrchestrator:
 
             # STEP 3: SYNC
             if video.syncOffset != 0:
-                logger.info(f"   {p} ⏱️ Step 3/5: Applying {video.syncOffset}s offset...")
+                logger.info(f"   {p} ⏱️ Step 2'/4: Applying {video.syncOffset}s offset...")
                 srt_content = self.processor.apply_offset(srt_content, video.syncOffset)
-            else:
-                logger.info(f"   {p} ⏩ Step 3/5: Skipping offset.")
 
             # STEP 4: TRANSLATION
             translated_map = {}
             for i, lang_code in enumerate(video.out):
                 progress = 40 + (i * (40 // len(video.out)))
                 event_manager.emit(fid, "processing", progress, f"{p} Step 4/5: Translating to {lang_code.upper()}...")
-                logger.info(f"   {p} 🌐 Step 4/5: Translating to [{lang_code}]...")
+                logger.info(f"   {p} 🌐 Step 3/4: Translating to [{lang_code}]...")
                 
-                # FIX: Pass current_file and total_files to avoid TypeError
                 translation = self.translator.refine_and_translate(
                     srt_content=srt_content,
                     target_lang=lang_code,
@@ -123,12 +137,13 @@ class PipelineOrchestrator:
                 translated_map[lang_code] = translation
                 
                 if opts.generateSRT:
-                    out_path = f"{os.path.splitext(video.path)[0]}.{lang_code}.srt"
-                    with open(out_path, "w", encoding="utf-8") as f:
+                    out_srt = Path(video.path).with_suffix(f".{lang_code}.srt")
+                    with open(out_srt, "w", encoding="utf-8") as f:
                         f.write(translation)
-                    logger.info(f"   {p} 💾 Saved SRT: {os.path.basename(out_path)}")
+                    logger.info(f"Saved SRT: {out_srt.name}")
 
             # STEP 5: MUXING
+            logger.info(f"   {p} 🛠️  Creating the ouput file")
             if opts.muxIntoMkv:
                 self.muxer.mux(
                     video_path=video.path,
@@ -147,6 +162,18 @@ class PipelineOrchestrator:
             logger.error(f"❌ {p} PIPELINE ERROR: {str(e)}")
             event_manager.emit(fid, "error", 0, f"Error: {str(e)}")
         finally:
+            # --- CLEANUP ---
+            # Remove from active jobs
+            self.active_jobs.discard(fid)
+            
+            # Remove temp audio if it exists
+            if temp_audio.exists():
+                try:
+                    temp_audio.unlink()
+                    logger.info(f"Cleaned up temporary audio track.")
+                except Exception as cleanup_err:
+                    logger.warning(f"   {p} ⚠️ Cleanup failed for {temp_audio.name}: {cleanup_err}")
+            
             logging.getLogger().removeHandler(log_handler)
 
 # --- LIFESPAN ---
@@ -174,10 +201,9 @@ async def scan(target_path: str = Query("/data")):
 
 @app.post("/api/process")
 async def process(request: ProcessRequest, background_tasks: BackgroundTasks):
-    total = len(request.videos)
-    for idx, video in enumerate(request.videos):
-        background_tasks.add_task(orchestrator.execute_pipeline, video, request.globalOptions, idx, total)
-    return {"status": "accepted", "count": total}
+    # We submit the whole list as one background task to ensure sequential execution
+    background_tasks.add_task(orchestrator.run_batch, request.videos, request.globalOptions)
+    return {"status": "accepted", "count": len(request.videos)}
 
 @app.get("/api/events/{file_id:path}")
 async def events(file_id: str):

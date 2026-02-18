@@ -42,7 +42,7 @@ class VideoMuxer:
             tmp_srt_paths.append((lang_code, tmp_path))
 
         try:
-            logger.info(f"🛠️ {prefix} Finalizing: {video_input_path.name}")
+            logger.info(f"Finalizing: {video_input_path.name}")
 
             # ------------------------------------------------
             # 2. Build FFmpeg command safely
