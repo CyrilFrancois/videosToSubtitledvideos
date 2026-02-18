@@ -80,7 +80,6 @@ class VideoScanner:
 
     def scan(self, target_path: str = None, recursive: bool = True) -> List[Dict[str, Any]]:
         scan_target = target_path if target_path else self.base_path
-        logger.info(f"Starting scanning of the mounted folder in .env.")
         
         # Security Guard
         if not os.path.abspath(scan_target).startswith(os.path.abspath(self.base_path)):
@@ -127,5 +126,4 @@ class VideoScanner:
         except Exception as e:
             logger.error(f"Scan failed in {scan_target}: {e}")
 
-        logger.info(f"Finished scanning.") 
         return items

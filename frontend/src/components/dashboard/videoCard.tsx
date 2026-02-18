@@ -5,7 +5,7 @@ import { useStudio } from '@/app/page';
 import SubImportModal from './SubImportModal';
 import { 
   Volume2, Text, Link as LinkIcon, Clock, Cpu, 
-  Check, Play, Loader2, FileText, Globe, ChevronDown, Layers 
+  Check, Play, Loader2, FileText, Globe, ChevronDown, Layers, Lock 
 } from 'lucide-react';
 import { ProcessingStatus } from '@/lib/types';
 
@@ -19,10 +19,7 @@ export default function VideoCard({ video }: { video: any }) {
   const targetLanguages = video.targetLanguages || ['fr'];
   const workflowMode = video.workflowMode || 'hybrid';
   
-  // Bug Fix: Ensure syncOffset is handled as a precise number for the label
   const syncOffset = typeof video.syncOffset === 'number' ? video.syncOffset : 0;
-  
-  // Feature: Local override for stripping tracks, falling back to global settings
   const stripExistingSubs = video.stripExistingSubs ?? state.settings.stripExistingSubs;
 
   // --- UI STATE ---
@@ -48,10 +45,6 @@ export default function VideoCard({ video }: { video: any }) {
       ? targetLanguages.filter((l: string) => l !== lang)
       : [...targetLanguages, lang];
     actions.updateVideoData(video.id, { targetLanguages: next });
-  };
-
-  const handleSetSrcLang = (lang: string) => {
-    actions.updateVideoData(video.id, { sourceLang: [lang] });
   };
 
   const getStatusColor = (status: ProcessingStatus) => {
@@ -113,17 +106,21 @@ export default function VideoCard({ video }: { video: any }) {
       {/* CONTROLS SECTION */}
       <div className="px-4 pb-4 grid grid-cols-12 gap-4">
         
-        {/* SOURCE LANG */}
+        {/* SOURCE LANG - LOCKED TO AUTO */}
         <div className="col-span-2 space-y-1">
           <span className="text-[8px] font-bold text-gray-600 uppercase">Input</span>
-          <div className="relative group/select">
-            <button className="w-full flex items-center justify-between bg-black/40 border border-white/5 p-2 rounded text-[10px] text-indigo-400 font-mono uppercase">
-              {sourceLang[0]}
-              <ChevronDown size={10} />
+          <div className="relative">
+            <button 
+              disabled 
+              className="w-full flex items-center justify-between bg-black/20 border border-white/5 p-2 rounded text-[10px] text-indigo-400/50 font-mono uppercase cursor-not-allowed"
+            >
+              AUTO
+              <Lock size={10} className="text-gray-700" />
             </button>
-            <div className="absolute top-full left-0 mt-1 hidden group-hover/select:grid grid-cols-2 gap-1 bg-[#161616] border border-white/10 p-2 rounded z-[110] shadow-2xl w-24">
+            {/* The dropdown code remains in the codebase (hidden) for future dev */}
+            <div className="hidden absolute top-full left-0 mt-1 grid-cols-2 gap-1 bg-[#161616] border border-white/10 p-2 rounded z-[110] shadow-2xl w-24">
               {["auto", ...langList].map(l => (
-                <button key={l} onClick={() => handleSetSrcLang(l)} className="text-[10px] p-1 hover:bg-indigo-600 rounded text-gray-300 font-mono uppercase">{l}</button>
+                <button key={l} className="text-[10px] p-1 hover:bg-indigo-600 rounded text-gray-300 font-mono uppercase">{l}</button>
               ))}
             </div>
           </div>
@@ -188,23 +185,28 @@ export default function VideoCard({ video }: { video: any }) {
 
         {/* ACTIONS */}
         <div className="col-span-3 flex flex-col justify-end gap-1">
+          {/* SYNC OPTION HIDDEN BUT KEPT IN CODE */}
           <button 
-            onClick={() => setShowOffsets(!showOffsets)}
-            className={`text-[9px] font-bold uppercase flex items-center justify-center gap-1 transition-colors ${syncOffset !== 0 ? 'text-indigo-400' : 'text-gray-500'}`}
+            className="hidden text-[9px] font-bold uppercase items-center justify-center gap-1 transition-colors text-gray-500"
           >
-            <Clock size={10} /> {syncOffset !== 0 ? `${syncOffset.toFixed(1)}s` : 'Sync'}
+            <Clock size={10} /> Sync
           </button>
+          
           <button 
             disabled={isProcessing}
             onClick={() => actions.process([video])}
-            className="w-full py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-bold text-[10px] uppercase active:scale-[0.98] transition-all"
+            className={`w-full py-1.5 rounded font-bold text-[10px] uppercase transition-all ${
+              isProcessing 
+              ? 'bg-white/5 text-gray-600 cursor-not-allowed' 
+              : 'bg-indigo-600 hover:bg-indigo-500 text-white active:scale-[0.98]'
+            }`}
           >
-            Process
+            {isProcessing ? 'Processing' : 'Process'}
           </button>
         </div>
       </div>
 
-      {/* OFFSET CONTROLLER */}
+      {/* OFFSET CONTROLLER - Logic kept but visual trigger hidden above */}
       {showOffsets && (
         <div className="px-4 py-3 bg-indigo-500/5 border-t border-white/5 flex justify-center">
           <div className="flex items-center gap-3 bg-black border border-white/10 px-4 py-1 rounded-full">
@@ -244,8 +246,6 @@ export default function VideoCard({ video }: { video: any }) {
         videoName={video.fileName}
         videoPath={video.filePath.substring(0, video.filePath.lastIndexOf('/'))}
         onFileSelect={async (file, targetName, destinationPath) => {
-          // Note: ensure api is imported or available in your context if used here directly
-          // Alternatively, call a method from actions that handles the upload
           actions.updateVideoData(video.id, { 
             workflowMode: 'srt',
             subtitleInfo: { 

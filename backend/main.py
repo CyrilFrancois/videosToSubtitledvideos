@@ -211,6 +211,7 @@ app.add_middleware(
 @app.get("/api/scan")
 async def scan(target_path: str = Query("/data")):
     # Uses throttled scanner
+    logger.info(f"Starting scanning of the mounted folder in .env.")
     return {"files": orchestrator.get_files(target_path)}
 
 @app.post("/api/process")
