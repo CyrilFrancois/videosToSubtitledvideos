@@ -78,6 +78,7 @@ function DashboardContent() {
 export default function DashboardPage() {
   const [mounted, setMounted] = useState(false);
   const activeListeners = useRef<Record<string, EventSource>>({});
+  const hasInitialScanned = useRef(false); // Ref to prevent React StrictMode double-triggers
 
   const [state, setState] = useState<StudioState>({
     items: [],
@@ -88,12 +89,12 @@ export default function DashboardPage() {
     settings: {
       sourceLang: ['auto'],
       targetLanguages: ['fr'], 
-      workflowMode: 'hybrid',
+      workflowMode: 'whisper', // Changed from hybrid to whisper as default
       modelSize: 'base',
       autoGenerate: true,
       shouldMux: true,
       shouldRemoveOriginal: false,
-      stripExistingSubs: false // New Global Option
+      stripExistingSubs: false 
     }
   });
 
@@ -111,8 +112,10 @@ export default function DashboardPage() {
     });
   }, []);
 
-  // 2. STABLE SCAN ACTION
+  // 2. STABLE SCAN ACTION (Throttled by state)
   const performScan = useCallback(async (path: string) => {
+    if (state.isScanning) return; 
+
     setState(prev => ({ ...prev, isScanning: true }));
     try {
       const data = await api.scanFolder(path);
@@ -125,7 +128,7 @@ export default function DashboardPage() {
           sourceLang: prev.settings.sourceLang,
           targetLanguages: prev.settings.targetLanguages,
           workflowMode: prev.settings.workflowMode,
-          stripExistingSubs: prev.settings.stripExistingSubs, // Inherit from global
+          stripExistingSubs: prev.settings.stripExistingSubs,
           children: f.is_directory ? process(f.children || []) : null
         }));
         return { ...prev, items: process(data.files || []), isScanning: false };
@@ -134,7 +137,7 @@ export default function DashboardPage() {
       console.error("Scan Failed:", e);
       setState(prev => ({ ...prev, isScanning: false }));
     }
-  }, []);
+  }, [state.isScanning]);
 
   // 3. SSE MANAGEMENT
   const subscribeToUpdates = useCallback((fileId: string) => {
@@ -197,52 +200,59 @@ export default function DashboardPage() {
       });
     },
 
-    scan: () => setState(prev => {
-      performScan(prev.currentPath);
-      return prev;
-    }),
+    scan: () => performScan(state.currentPath),
 
     process: async (targetVideos: VideoFile[]) => {
-      if (targetVideos.length === 0) return;
+      // Logic protection: Don't re-process files already in 'processing' status
+      const videosToStart = targetVideos.filter(v => v.status !== 'processing');
+      if (videosToStart.length === 0) return;
       
-      setState(prev => {
-        const payload = {
-          videos: targetVideos.map(v => ({
-            name: v.fileName,
-            path: v.filePath,
-            src: v.sourceLang?.[0] || prev.settings.sourceLang[0],
-            out: v.targetLanguages || prev.settings.targetLanguages,
-            workflowMode: v.workflowMode || prev.settings.workflowMode,
-            syncOffset: v.syncOffset || 0,
-            // Include the strip option in the per-video payload
-            stripExistingSubs: v.stripExistingSubs ?? prev.settings.stripExistingSubs,
-          })),
-          globalOptions: {
-            transcriptionEngine: prev.settings.modelSize,
-            generateSRT: prev.settings.autoGenerate,
-            muxIntoMkv: prev.settings.shouldMux,
-            cleanUp: prev.settings.shouldRemoveOriginal
-          }
-        };
+      const payload = {
+        videos: videosToStart.map(v => ({
+          name: v.fileName,
+          path: v.filePath,
+          src: v.sourceLang?.[0] || state.settings.sourceLang[0],
+          out: v.targetLanguages || state.settings.targetLanguages,
+          workflowMode: v.workflowMode || state.settings.workflowMode,
+          syncOffset: v.syncOffset || 0,
+          stripExistingSubs: v.stripExistingSubs ?? state.settings.stripExistingSubs,
+        })),
+        globalOptions: {
+          transcriptionEngine: state.settings.modelSize,
+          generateSRT: state.settings.autoGenerate,
+          muxIntoMkv: state.settings.shouldMux,
+          cleanUp: state.settings.shouldRemoveOriginal
+        }
+      };
 
-        targetVideos.forEach(v => {
-          updateVideoInList(v.id, { status: 'processing', progress: 5 });
-          subscribeToUpdates(v.filePath);
-        });
-
-        api.startJob(payload).catch(() => {
-          targetVideos.forEach(v => updateVideoInList(v.id, { status: 'error', statusText: 'Failed to start' }));
-        });
-
-        return prev;
+      // Set UI state to processing immediately
+      videosToStart.forEach(v => {
+        updateVideoInList(v.id, { status: 'processing', progress: 5, statusText: 'Initializing...' });
+        subscribeToUpdates(v.filePath);
       });
+
+      // API call moved OUTSIDE of setState to prevent side-effect duplication
+      try {
+        await api.startJob(payload);
+      } catch (err) {
+        console.error("Job start failed:", err);
+        videosToStart.forEach(v => {
+          updateVideoInList(v.id, { status: 'error', statusText: 'Failed to connect to server' });
+        });
+      }
     }
-  }), [performScan, subscribeToUpdates, updateVideoInList]);
+  }), [performScan, subscribeToUpdates, updateVideoInList, state.currentPath, state.settings]);
 
   // 5. LIFECYCLE
   useEffect(() => {
     setMounted(true);
-    performScan("/data"); 
+    
+    // StrictMode Protection: only fire initial scan once per mount
+    if (!hasInitialScanned.current) {
+      performScan("/data"); 
+      hasInitialScanned.current = true;
+    }
+
     return () => {
       Object.values(activeListeners.current).forEach(es => es.close());
     };

@@ -13,7 +13,7 @@ class VideoTranscriber:
         Initializes the Faster-Whisper model.
         device="cpu" is standard for Docker; compute_type="int8" is optimized for CPU speed.
         """
-        logger.info(f"💾 Loading Faster-Whisper model: [{model_size}]...")
+        logger.info(f"Loading Faster-Whisper model: [{model_size}]...")
         # Using cpu + int8 is the most stable configuration for containerized environments
         self.model = WhisperModel(model_size, device="cpu", compute_type="int8")
 
