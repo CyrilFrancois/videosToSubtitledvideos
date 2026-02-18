@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo } from 'react';
-import { useStudio } from '@/app/page';
+import { useStudio } from '@/app/page'; // Ensure this matches your final context location
 import { 
   Folder, Play, Volume2, Text, Eraser,
   Check, Loader2, ChevronDown, Cpu, Zap, Settings, Lock
@@ -119,7 +119,6 @@ export default function Sidebar() {
           </div>
 
           <div className="space-y-2">
-            {/* Locked to Auto Detect */}
             <LanguageDropdown 
               label="SRC" 
               isSingle 
@@ -167,7 +166,7 @@ export default function Sidebar() {
               onChange={(e) => actions.setSettings({ workflowMode: e.target.value as any })}
               className="w-full bg-black/40 border border-white/10 p-2.5 rounded-lg text-xs font-mono outline-none focus:border-indigo-500 transition-colors cursor-pointer"
             >
-              <option value="hybrid">Hybrid: AI + SRT Discovery</option>
+              <option value="hybrid">Hybrid: SRT if found else AI</option>
               <option value="whisper">Pure: AI Only</option>
               <option value="srt">Legacy: SRT Refining Only</option>
             </select>
@@ -175,11 +174,10 @@ export default function Sidebar() {
 
           <div className="space-y-3 pt-4 border-t border-white/5">
             <Switch 
-              label="Auto-Mux into MKV" 
+              label={settings.shouldMux ? "Auto-Mux into a new MKV file" : "Just create the SRT files"} 
               checked={settings.shouldMux} 
               onChange={(v: boolean) => actions.setSettings({ shouldMux: v })} 
             />
-            {/* Renamed and Colored Red */}
             <Switch 
               label="Delete embedded subtitles" 
               icon={<Eraser size={12} />}
@@ -187,14 +185,6 @@ export default function Sidebar() {
               danger={true} 
               onChange={(v: boolean) => actions.setSettings({ stripExistingSubs: v })} 
             />
-            {/* Logic exists but UI is hidden */}
-            <div className="hidden">
-               <Switch 
-                label="Studio Cleanup (Delete Temp)" 
-                checked={settings.shouldRemoveOriginal} 
-                onChange={(v: boolean) => actions.setSettings({ shouldRemoveOriginal: v })} 
-              />
-            </div>
           </div>
         </section>
       </div>
