@@ -1,39 +1,41 @@
 import os
 import logging
+import time
 from openai import OpenAI
-from typing import Callable, Any, Optional
+from typing import Callable, Any, List
 
 logger = logging.getLogger("SubStudio.Translator")
 
 class SubtitleTranslator:
     def __init__(self, api_key: str = None):
         self.client = OpenAI(api_key=api_key or os.getenv("OPENAI_API_KEY"))
-        self.model = "gpt-4o-mini" 
+        self.model = "gpt-4o-mini" # High intelligence, low latency
 
     def get_context_profile(self, filename: str) -> str:
         """
-        Phase 0: Research the filename to create a 'Story Bible'.
+        Research Phase: Identifies the show/movie to ensure character names 
+        and gender-specific grammar (especially for FR/ES/DE) are correct.
         """
-        logger.info(f"🔍 [LLM] Generating context profile for: {filename}")
-        prompt = f"""Identify this movie or TV show from the filename: '{filename}'
-        Provide a concise profile for subtitle correction:
-        1. Plot Summary (2 sentences).
-        2. Main Characters (Names and Genders).
-        3. Setting/Tone (e.g., Sci-Fi, Technical, Slang-heavy).
-        If the file is unknown, describe general likely context based on the words in the title."""
+        logger.info(f"🔍 Analyzing filename context: {filename}")
+        
+        prompt = f"""Identify the media from this filename: '{filename}'
+        Return a 'Story Bible' for a translator:
+        - Series/Movie Title
+        - Lead Characters (Names & Genders)
+        - Tone (Slang, Formal, Medical, Sci-Fi)
+        - Brief Plot Context
+        If unknown, infer from keywords."""
 
         try:
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.2
+                temperature=0.3
             )
-            profile = response.choices[0].message.content.strip()
-            logger.info("✅ [LLM] Context Profile Created.")
-            return profile
+            return response.choices[0].message.content.strip()
         except Exception as e:
-            logger.error(f"❌ [LLM] Context injection failed: {e}")
-            return "General media content, neutral tone."
+            logger.error(f"❌ Context Research failed: {e}")
+            return "Neutral media content. No specific character data."
 
     def refine_and_translate(
         self, 
@@ -44,68 +46,81 @@ class SubtitleTranslator:
         task_manager: Any,
         context_profile: str,
         is_whisper_source: bool = False
-    ):
+    ) -> str:
         """
-        Phases 1 & 2: Fix Whisper errors using Context, then Translate.
+        Processes the SRT in batches to avoid token limits and maintain format.
         """
-        lines = srt_content.strip().split('\n\n')
-        batch_size = 25 
-        translated_blocks = []
-        total_batches = (len(lines) + batch_size - 1) // batch_size
+        # Split into blocks, but keep empty lines to maintain integrity
+        blocks = srt_content.strip().split('\n\n')
+        batch_size = 30 
+        results = []
+        total_batches = (len(blocks) + batch_size - 1) // batch_size
 
-        for i in range(0, len(lines), batch_size):
-            # Check for Kill Switch
+        logger.info(f"🌐 Translating {len(blocks)} blocks into {target_lang}...")
+
+        for i in range(0, len(blocks), batch_size):
             if task_manager.is_aborted:
-                logger.warning(f"🛑 [LLM] Translation aborted at batch {i}")
-                return None
+                logger.warning("🛑 Translation aborted by user.")
+                return ""
 
-            batch = "\n\n".join(lines[i : i + batch_size])
-            current_batch_num = (i // batch_size) + 1
+            batch = blocks[i : i + batch_size]
+            batch_text = "\n\n".join(batch)
+            current_batch = (i // batch_size) + 1
             
-            # Update terminal and UI
-            progress_step = "Refining & Translating" if is_whisper_source else "Translating"
-            on_progress(file_id, "translating", int((current_batch_num / total_batches) * 100), 
-                        f"{progress_step} batch {current_batch_num}/{total_batches}...")
+            # Progress tracking for Frontend
+            progress_pct = 10 + int((current_batch / total_batches) * 85)
+            on_progress(file_id, "translating", progress_pct, 
+                        f"Translating {target_lang.upper()} (Batch {current_batch}/{total_batches})")
 
-            system_prompt = self._generate_system_prompt(target_lang, context_profile, is_whisper_source)
+            system_prompt = self._build_system_prompt(target_lang, context_profile, is_whisper_source)
 
+            try:
+                # Retry logic for API hiccups
+                translated_batch = self._call_llm(system_prompt, batch_text)
+                results.append(translated_batch)
+            except Exception as e:
+                logger.error(f"❌ Batch {current_batch} failed: {e}")
+                results.append(batch_text) # Fallback to original so the file isn't empty
+
+        return "\n\n".join(results)
+
+    def _call_llm(self, system_prompt: str, user_content: str, retries=2) -> str:
+        """Wrapper for OpenAI call with specific SRT formatting enforcement."""
+        for attempt in range(retries + 1):
             try:
                 response = self.client.chat.completions.create(
                     model=self.model,
                     messages=[
                         {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": f"CONTEXT BIBLE:\n{context_profile}\n\nSRT BATCH:\n{batch}"}
+                        {"role": "user", "content": user_content}
                     ],
-                    temperature=0.3
+                    temperature=0.2 # Lower temperature = more consistent SRT format
                 )
-                translated_blocks.append(response.choices[0].message.content.replace("```srt","").replace("```","").strip())
-                
-                if i % 50 == 0:
-                    logger.info(f"🧵 [LLM] Processed {current_batch_num}/{total_batches} batches...")
-
+                content = response.choices[0].message.content.strip()
+                # Remove any markdown code block wrappers if the AI adds them
+                return content.replace("```srt", "").replace("```", "").strip()
             except Exception as e:
-                logger.error(f"❌ [LLM] Error at batch {current_batch_num}: {e}")
-                translated_blocks.append(batch) # Fallback to original
+                if attempt == retries: raise e
+                time.sleep(2)
+        return user_content
 
-        return "\n\n".join(translated_blocks)
-
-    def _generate_system_prompt(self, target_lang: str, context: str, is_whisper: bool):
-        correction_logic = ""
+    def _build_system_prompt(self, lang: str, context: str, is_whisper: bool) -> str:
+        whisper_instruction = ""
         if is_whisper:
-            correction_logic = """
-            CRITICAL: The source text comes from AI transcription (Whisper). 
-            It may have phonetic errors (wrong names, similar sounding words).
-            Use the CONTEXT BIBLE to:
-            1. Correct character names and genders.
-            2. Fix nonsensical sentences based on the plot summary.
-            3. Ensure technical terms match the setting.
+            whisper_instruction = """
+            NOTE: Source is AI-transcribed and may have phonetic errors. 
+            Use the provided context bible to fix character names and terms.
             """
 
-        return f"""You are a professional subtitle editor and translator.
-        {correction_logic}
+        return f"""You are an expert subtitle translator ({lang}).
+        {whisper_instruction}
         
-        TASK: Translate the provided SRT batch into {target_lang}.
-        STRICT RULES:
-        1. Keep exact same subtitle numbers and timestamps.
-        2. Preserve SRT formatting.
-        3. Output ONLY the translated SRT content."""
+        STORY BIBLE FOR CONTEXT:
+        {context}
+
+        RULES:
+        1. Keep TIMESTAMPS and INDEX NUMBERS exactly as provided.
+        2. Preserve SRT structure: [Index]\\n[Time] --> [Time]\\n[Text]\\n\\n
+        3. Translate only the text content.
+        4. Do not include any explanations or markdown.
+        """

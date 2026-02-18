@@ -1,41 +1,44 @@
 import asyncio
 import json
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
-# This logger is just for the internal event system logs
 logger = logging.getLogger("SubStudio.Events")
 
 class SSELogHandler(logging.Handler):
     """
-    Custom logging handler that pipes Python logs into the EventManager
-    to be sent via SSE to the frontend.
+    Intercepts standard Python logs and pipes them into the EventManager.
+    This is what makes 'logger.info("Starting...")' appear in the React terminal.
     """
-    def __init__(self, event_manager, file_id_context):
+    def __init__(self, event_manager: 'EventManager', file_id: str):
         super().__init__()
         self.event_manager = event_manager
-        self.current_file_id = file_id_context 
+        self.file_id = file_id
 
     def emit(self, record):
         try:
-            # We skip internal SSE logs to avoid infinite loops
-            if record.name == "SubStudio.Events":
+            # Avoid infinite loop: don't bridge logs coming from the event system itself
+            if "SubStudio.Events" in record.name:
                 return
                 
-            log_entry = self.format(record)
-            if self.current_file_id:
-                # Direct injection into the SSE broadcaster
-                self.event_manager.emit_log(self.current_file_id, log_entry, record.levelname)
+            log_message = self.format(record)
+            # Send to the broadcaster
+            self.event_manager.emit_log(self.file_id, log_message, record.levelname)
         except Exception:
             self.handleError(record)
 
 class EventManager:
+    """
+    Manages Server-Sent Events (SSE) subscriptions.
+    Each file_id gets its own dedicated broadcast channel.
+    """
     def __init__(self):
         self.listeners: Dict[str, List[asyncio.Queue]] = {}
-        self.last_event_cache: Dict[str, Dict[str, Any]] = {}
+        # Stores the last known status to show immediately on reconnect
+        self.state_cache: Dict[str, Dict[str, Any]] = {}
 
     def emit(self, file_id: str, status: str, progress: int, message: str):
-        """Emits standard UI progress updates."""
+        """Updates the UI progress bar and status text."""
         data = {
             "type": "status",
             "fileId": file_id,
@@ -43,67 +46,69 @@ class EventManager:
             "progress": progress,
             "message": message
         }
+        self.state_cache[file_id] = data
         self._broadcast(file_id, data)
 
-    def emit_log(self, file_id: str, log_message: str, level: str = "INFO"):
-        """Emits raw log lines to the frontend terminal."""
+    def emit_log(self, file_id: str, message: str, level: str = "INFO"):
+        """Sends a raw string to the frontend's console/terminal component."""
         data = {
             "type": "log",
             "fileId": file_id,
             "level": level,
-            "message": log_message
+            "message": message
         }
         self._broadcast(file_id, data)
 
     def _broadcast(self, file_id: str, data: Dict[str, Any]):
-        if data.get("type") == "status":
-            self.last_event_cache[file_id] = data
-            
+        """Pushes data to all active browser tabs listening to this file_id."""
         if file_id in self.listeners:
             for queue in self.listeners[file_id]:
-                # Non-blocking put
-                queue.put_nowait(data)
+                # Non-blocking put; if the queue is full, we skip to prevent lag
+                try:
+                    queue.put_nowait(data)
+                except asyncio.QueueFull:
+                    pass
 
     async def subscribe(self, file_id: str):
-        queue = asyncio.Queue()
+        """The generator function used by FastAPI StreamingResponse."""
+        queue = asyncio.Queue(maxsize=100)
         
-        if file_id in self.last_event_cache:
-            queue.put_nowait(self.last_event_cache[file_id])
+        # 1. Send immediate state if we have it
+        if file_id in self.state_cache:
+            yield f"data: {json.dumps(self.state_cache[file_id])}\n\n"
 
+        # 2. Register this listener
         if file_id not in self.listeners:
             self.listeners[file_id] = []
-        
         self.listeners[file_id].append(queue)
         
+        logger.debug(f"🔌 New SSE subscriber for: {file_id}")
+
         try:
             while True:
                 data = await queue.get()
                 yield f"data: {json.dumps(data)}\n\n"
         except asyncio.CancelledError:
+            logger.debug(f"🔌 SSE subscriber disconnected: {file_id}")
+        finally:
             if file_id in self.listeners:
                 self.listeners[file_id].remove(queue)
                 if not self.listeners[file_id]:
                     del self.listeners[file_id]
 
-# Global instance
+# Global Singleton
 event_manager = EventManager()
 
-def setup_logging_bridge(file_id: str):
+def setup_logging_bridge(file_id: str) -> SSELogHandler:
     """
-    Connects ALL backend logs to the SSE stream for a specific file.
+    Attaches the logger to the SSE stream. 
+    Usage in main.py: handler = setup_logging_bridge(fid) -> ... -> root.removeHandler(handler)
     """
-    # 1. Get the ROOT logger of the entire app
-    # If your other files use logging.getLogger(__name__), 
-    # they will all propagate up to the root.
-    root_logger = logging.getLogger() 
-    
-    # 2. Attach our bridge
+    root_logger = logging.getLogger()
     handler = SSELogHandler(event_manager, file_id)
     
-    # 3. Use a clean format for the frontend terminal
-    handler.setFormatter(logging.Formatter('%(name)s | %(levelname)s | %(message)s'))
+    # Clean format for the UI Terminal
+    handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
     
     root_logger.addHandler(handler)
-    
-    # 4. Return the handler so main.py can remove it after the job
     return handler

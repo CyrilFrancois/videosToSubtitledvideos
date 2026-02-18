@@ -1,126 +1,107 @@
 import os
-import subprocess
-import whisper
-import ffmpeg
 import logging
-from pathlib import Path
-from typing import Callable, Any
+import ffmpeg
+from faster_whisper import WhisperModel
+from typing import Callable
 
 logger = logging.getLogger("SubStudio.Transcriber")
 
 class VideoTranscriber:
     def __init__(self, model_size: str = "base"):
-        # Models: tiny, base, small, medium, large
-        logger.info(f"💾 Loading Whisper model: {model_size}...")
-        self.model = whisper.load_model(model_size)
-        # Constant offset to sync subtitles with audio
-        self.TIME_OFFSET = 0.4 
+        """
+        Initializes the Faster-Whisper model.
+        device="cpu" is standard for Docker; compute_type="int8" is optimized for CPU speed.
+        """
+        logger.info(f"💾 Loading Faster-Whisper model: [{model_size}]...")
+        self.model = WhisperModel(model_size, device="cpu", compute_type="int8")
 
-    def extract_audio(self, video_path: str, task_manager: Any) -> str:
-        """Extracts audio via FFmpeg async to allow PID tracking."""
-        audio_path = video_path.rsplit('.', 1)[0] + ".temp.wav"
-        logger.info(f"🔊 [FFMPEG] Extracting audio: {os.path.basename(audio_path)}")
+    def extract_audio(self, video_path: str) -> str:
+        """Extracts mono 16k WAV file for Whisper."""
+        audio_path = f"{os.path.splitext(video_path)[0]}.tmp.wav"
+        logger.info(f"🔊 Extracting audio for AI analysis...")
         
-        task_manager.register_artifact(audio_path)
-
         try:
-            process = (
+            (
                 ffmpeg
                 .input(video_path)
                 .output(audio_path, acodec='pcm_s16le', ac=1, ar='16k')
                 .overwrite_output()
-                .run_async(pipe_stdin=True, quiet=True)
+                .run(capture_stdout=True, capture_stderr=True)
             )
-
-            task_manager.active_pid = process.pid
-            logger.info(f"⚙️ [FFMPEG] PID: {process.pid} started extraction")
-
-            process.wait()
-            task_manager.active_pid = None
             return audio_path
-
-        except Exception as e:
-            logger.error(f"❌ [FFMPEG] Audio extraction failed: {e}")
-            task_manager.active_pid = None
-            return video_path
+        except ffmpeg.Error as e:
+            err = e.stderr.decode() if e.stderr else str(e)
+            logger.error(f"❌ Audio extraction failed: {err}")
+            return ""
 
     def format_timestamp(self, seconds: float) -> str:
-        """Converts seconds to SRT timestamp format: HH:MM:SS,mmm"""
-        # Ensure we don't have negative timestamps after offset
+        """Standard SRT format: HH:MM:SS,mmm"""
         seconds = max(0, seconds)
+        td_hours = int(seconds // 3600)
+        td_minutes = int((seconds % 3600) // 60)
+        td_seconds = int(seconds % 60)
+        td_milliseconds = int(round((seconds - int(seconds)) * 1000))
         
-        hours = int(seconds // 3600)
-        minutes = int((seconds % 3600) // 60)
-        secs = int(seconds % 60)
-        milliseconds = int(round((seconds - int(seconds)) * 1000))
-        
-        # Handle rounding overflow (e.g., 1000ms -> 1s)
-        if milliseconds >= 1000:
-            milliseconds -= 1000
-            secs += 1
-            if secs >= 60:
-                secs -= 60
-                minutes += 1
-                if minutes >= 60:
-                    minutes -= 60
-                    hours += 1
+        if td_milliseconds >= 1000:
+            td_milliseconds -= 1000
+            td_seconds += 1
 
-        return f"{hours:02d}:{minutes:02d}:{secs:02d},{milliseconds:03d}"
+        return f"{td_hours:02}:{td_minutes:02}:{td_seconds:02},{td_milliseconds:03}"
 
-    def transcribe(self, video_path: str, file_id: str, on_progress: Callable, task_manager: Any):
-        """Runs the transcription and yields SRT content with a time offset."""
-        
-        # 1. Extraction
-        audio_file = self.extract_audio(video_path, task_manager)
-        
-        if task_manager.is_aborted:
-            return None
-
-        on_progress(file_id, "transcribing", 10, "AI is listening to audio...")
-        logger.info(f"🤖 [WHISPER] Starting inference on {os.path.basename(audio_file)}")
-
-        # 2. Transcription
-        result = self.model.transcribe(
-            audio_file, 
-            verbose=False,
-            fp16=False 
-        )
-
-        srt_content = ""
-        segments = result.get('segments', [])
-        total_segments = len(segments)
-
-        logger.info(f"📝 [WHISPER] Processing {total_segments} audio segments with +{self.TIME_OFFSET}s offset")
-
-        for i, segment in enumerate(segments):
-            if task_manager.is_aborted:
-                logger.warning(f"🛑 [WHISPER] Abort detected during segment {i}")
-                return None
-
-            # Apply the 0.4s offset here
-            start_time = segment['start'] + self.TIME_OFFSET
-            end_time = segment['end'] + self.TIME_OFFSET
-
-            start = self.format_timestamp(start_time)
-            end = self.format_timestamp(end_time)
-            text = segment['text'].strip()
+    def transcribe(
+        self, 
+        video_path: str, 
+        file_id: str, 
+        on_progress: Callable
+    ) -> str:
+        audio_file = ""
+        try:
+            # 1. Audio Extraction
+            on_progress(file_id, "transcribing", 5, "Extracting audio...")
+            audio_file = self.extract_audio(video_path)
             
-            srt_content += f"{i + 1}\n{start} --> {end}\n{text}\n\n"
-            
-            # Progress tracking
-            progress_val = 20 + int((i / total_segments) * 70)
-            
-            if i % 10 == 0:
-                logger.info(f"🧵 [WHISPER] Progress: {progress_val}% | {text[:30]}...")
-                on_progress(file_id, "transcribing", progress_val, f"Listening: {text[:20]}...")
+            if not audio_file or not os.path.exists(audio_file):
+                raise Exception("Could not prepare audio for transcription.")
 
-        # 3. Cleanup
-        if audio_file.endswith(".temp.wav") and os.path.exists(audio_file):
-            try:
-                os.remove(audio_file)
-                logger.info(f"🗑️ [WHISPER] Cleaned up temporary audio.")
-            except:
-                pass
+            # 2. AI Inference
+            # segments is a generator; transcription happens as we iterate
+            logger.info(f"🤖 Faster-Whisper inference starting for {file_id}")
+            segments, info = self.model.transcribe(audio_file, beam_size=5)
+            
+            total_duration = info.duration
+            srt_blocks = []
 
-        on_progress(file_id, "transcribing", 100, "Initial transcription finished!")
-        return srt_content
+            # 3. Process Segments and Update Real Progress
+            for segment in segments:
+                # Calculate progress based on the audio timeline (from 10% to 90% of bar)
+                real_progress = 10 + int((segment.end / total_duration) * 80)
+                
+                # Update frontend with actual transcription snippet
+                on_progress(
+                    file_id, 
+                    "transcribing", 
+                    real_progress, 
+                    f"Transcribing: {segment.text.strip()[:30]}..."
+                )
+
+                start = self.format_timestamp(segment.start)
+                end = self.format_timestamp(segment.end)
+                text = segment.text.strip()
+                
+                if text:
+                    srt_blocks.append(f"{len(srt_blocks) + 1}\n{start} --> {end}\n{text}\n")
+
+            on_progress(file_id, "transcribing", 95, "Finalizing subtitles...")
+            logger.info(f"✅ Transcription complete. Generated {len(srt_blocks)} segments.")
+            
+            return "\n".join(srt_blocks)
+
+        except Exception as e:
+            logger.error(f"❌ Transcription error: {str(e)}")
+            raise e
+        finally:
+            if audio_file and os.path.exists(audio_file):
+                try:
+                    os.remove(audio_file)
+                except Exception:
+                    pass

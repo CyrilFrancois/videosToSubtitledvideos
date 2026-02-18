@@ -6,11 +6,13 @@ pydantic
 pydantic-settings
 
 # AI & Transcription
-openai-whisper
+# Pinning to 1.0.3 for stability with the int8 compute type
+faster-whisper==1.0.3
 openai
-torch
-torchaudio
-torchvision
+requests
+# torch is a dependency for some whisper internals, 
+# but we only need the base package
+torch --index-url https://download.pytorch.org/whl/cpu
 
 # Media Processing
 langdetect
