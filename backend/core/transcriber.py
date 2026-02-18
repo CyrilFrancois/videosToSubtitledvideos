@@ -66,7 +66,7 @@ class VideoTranscriber:
         
         try:
             # 1. Audio Extraction
-            on_progress(file_id, "transcribing", 5, f"{file_prefix} Step 2/5: Extracting audio...")
+            on_progress(file_id, "transcribing", 5, f"Step 2/5: Extracting audio...")
             audio_file = self.extract_audio(video_path)
             
             if not audio_file or not os.path.exists(audio_file):
@@ -97,7 +97,7 @@ class VideoTranscriber:
                 # Log to terminal every 10% to fill the "gaps" you noticed
                 current_pct = int((segment.end / total_duration) * 100)
                 if current_pct >= last_logged_pct + 10:
-                    logger.info(f"   {file_prefix} Step 2/5: Transcription Progress: {current_pct}%")
+                    logger.info(f"   Step 2/5: Transcription Progress: {current_pct}%")
                     last_logged_pct = (current_pct // 10) * 10
 
                 start = self.format_timestamp(segment.start)
