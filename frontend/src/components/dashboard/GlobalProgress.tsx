@@ -2,12 +2,9 @@
 
 import React, { useEffect, useRef, useMemo } from 'react';
 import { useStudio } from '@/app/page';
-import { Activity, Terminal, ChevronRight, Cpu, Zap, CheckCircle2 } from 'lucide-react';
+import { Activity, Terminal, ChevronRight, Cpu, Zap, CheckCircle2, PartyPopper } from 'lucide-react';
 import { VideoFile } from '@/lib/types';
 
-/**
- * Auto-scrolling Log Terminal with log-level highlighting
- */
 function LogTerminal({ logs }: { logs: string[] }) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -87,10 +84,19 @@ export default function GlobalProgress() {
   const totalCount = selectedVideos.length;
   
   const isProcessing = activeItems.length > 0;
+  const isFullyDone = totalCount > 0 && completedCount === totalCount;
   const globalPercentage = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
 
-  const activeVideo = activeItems[0];
-  const currentLogs = activeVideo ? logs[activeVideo.filePath] || logs[activeVideo.id] || [] : [];
+  // We find the last processed video to keep its name visible even after it finishes
+  const lastActiveVideo = useMemo(() => {
+    if (activeItems.length > 0) return activeItems[0];
+    if (isFullyDone) return selectedVideos[selectedVideos.length - 1];
+    return null;
+  }, [activeItems, isFullyDone, selectedVideos]);
+
+  const currentLogs = lastActiveVideo 
+    ? logs[lastActiveVideo.filePath] || logs[lastActiveVideo.id] || [] 
+    : [];
 
   return (
     <div className="sticky top-0 z-30 px-8 py-6 bg-gradient-to-b from-[#0a0a0a] via-[#0a0a0a] to-transparent backdrop-blur-sm">
@@ -103,11 +109,11 @@ export default function GlobalProgress() {
             </h2>
             
             <div className="flex items-baseline gap-3">
-              <span className="text-4xl font-black text-white tabular-nums tracking-tighter">
+              <span className={`text-4xl font-black tabular-nums tracking-tighter transition-colors duration-500 ${isFullyDone ? 'text-emerald-400' : 'text-white'}`}>
                 {completedCount}<span className="text-gray-700 mx-1">/</span>{totalCount}
               </span>
               <span className="text-xs font-bold text-gray-500 uppercase tracking-widest pb-1">
-                Selected Tasks
+                Tasks Completed
               </span>
             </div>
           </div>
@@ -116,19 +122,25 @@ export default function GlobalProgress() {
              <div className={`flex items-center gap-2 px-4 py-1.5 rounded-full border text-[10px] font-black tracking-widest transition-all duration-500 ${
                isProcessing 
                 ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-400 shadow-[0_0_15px_rgba(99,102,241,0.1)]' 
+                : isFullyDone 
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
                 : 'bg-white/5 border-white/10 text-gray-500'
              }`}>
                {isProcessing ? (
                  <> <Zap size={10} className="fill-current" /> PROCESSING </>
+               ) : isFullyDone ? (
+                 <> <PartyPopper size={10} /> ALL BATCHES FINISHED </>
                ) : (
                  <> <CheckCircle2 size={10} /> {totalCount > 0 ? 'READY FOR BATCH' : 'IDLE'} </>
                )}
              </div>
              
-             {activeVideo && (
-               <div className="flex items-center gap-2 text-[10px] text-indigo-300 font-mono bg-indigo-500/5 px-3 py-1 rounded-md border border-indigo-500/10 animate-in slide-in-from-right-4">
-                 <ChevronRight size={12} className="text-indigo-500" />
-                 Active: {activeVideo.fileName}
+             {lastActiveVideo && (
+               <div className={`flex items-center gap-2 text-[10px] font-mono px-3 py-1 rounded-md border transition-all duration-500 ${
+                 isFullyDone ? 'bg-emerald-500/5 border-emerald-500/10 text-emerald-300' : 'bg-indigo-500/5 border-indigo-500/10 text-indigo-300 animate-in slide-in-from-right-4'
+               }`}>
+                 <ChevronRight size={12} className={isFullyDone ? "text-emerald-500" : "text-indigo-500"} />
+                 {isFullyDone ? `Completed: ${lastActiveVideo.fileName}` : `Active: ${lastActiveVideo.fileName}`}
                </div>
              )}
           </div>
@@ -140,27 +152,21 @@ export default function GlobalProgress() {
             className={`h-full transition-all duration-1000 ease-in-out ${
               isProcessing 
                 ? 'bg-gradient-to-r from-indigo-600 via-violet-500 to-indigo-400' 
-                : 'bg-emerald-600/40'
+                : isFullyDone 
+                ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]'
+                : 'bg-white/10'
             }`}
             style={{ width: `${globalPercentage}%` }}
           />
-          {isProcessing && (
-            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent w-20 animate-shimmer" />
-          )}
         </div>
 
-        {/* Terminal Section — Always Visible */}
+        {/* Terminal Section */}
         <div className="mt-6 animate-in fade-in slide-in-from-top-4 duration-500">
           <div className="flex items-center justify-between px-1">
             <div className="flex items-center gap-2 text-[10px] font-bold text-gray-500 uppercase tracking-widest">
-              <Terminal size={12} className={isProcessing ? "text-indigo-500" : "text-gray-600"} />
+              <Terminal size={12} className={isProcessing ? "text-indigo-500" : isFullyDone ? "text-emerald-500" : "text-gray-600"} />
               System Execution Logs
             </div>
-            {currentLogs.length > 0 && (
-              <div className="text-[9px] font-mono text-gray-600 uppercase">
-                Buffer: <span className="text-indigo-400/60">{currentLogs.length} Lines</span>
-              </div>
-            )}
           </div>
           <LogTerminal logs={currentLogs} />
         </div>

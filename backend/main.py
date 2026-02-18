@@ -3,6 +3,7 @@ import os
 import time
 import asyncio
 import json
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI, BackgroundTasks, Query, Request
@@ -65,6 +66,31 @@ class PipelineOrchestrator:
         self._last_scan_time = 0
         self._cached_files = []
 
+    def split_long_lines(self, srt_text: str, max_chars: int = 45) -> str:
+        """Adds \n to subtitle lines that are too long."""
+        def process_block(match):
+            index, times, text = match.groups()
+            lines = text.strip().split('\n')
+            new_lines = []
+            
+            for line in lines:
+                if len(line) > max_chars:
+                    # Find space closest to the middle to split
+                    mid = len(line) // 2
+                    space_indices = [i for i, char in enumerate(line) if char == ' ']
+                    if space_indices:
+                        best_space = min(space_indices, key=lambda x: abs(x - mid))
+                        line = line[:best_space] + '\n' + line[best_space+1:]
+                new_lines.append(line)
+            
+            # Fix: Join lines into a variable first to avoid backslashes in the f-string
+            joined_content = '\n'.join(new_lines)
+            return f"{index}\n{times}\n{joined_content}\n\n"
+
+        # Regex to match SRT blocks: Index, Time range, and Text content
+        pattern = re.compile(r"(\d+)\n(\d{2}:\d{2}:\d{2},\d{3} --> \d{2}:\d{2}:\d{2},\d{3})\n([\s\S]*?)(?:\n\n|\Z)")
+        return pattern.sub(process_block, srt_text)
+
     def get_files(self, target_path: str):
         now = time.time()
         if now - self._last_scan_time < 2.0:
@@ -76,21 +102,26 @@ class PipelineOrchestrator:
 
     async def run_batch(self, videos: List[VideoJob], opts: GlobalOptions):
         total = len(videos)
-        for idx, video in enumerate(videos):
-            if video.path in self.active_jobs:
-                logger.warning(f"⚠️ [Skip] {video.name} is already in the pipeline.")
-                continue
-            await self.execute_pipeline(video, opts, idx, total)
+        try:
+            for idx, video in enumerate(videos):
+                if video.path in self.active_jobs:
+                    logger.warning(f"⚠️ [Skip] {video.name} is already in the pipeline.")
+                    continue
+                await self.execute_pipeline(video, opts, idx, total)
+        finally:
+            # --- NOTIFY FRONTEND FINISHED ---
+            # We use a reserved ID "system_events" to signal the UI to unlock
+            logger.info("🏁 BATCH PROCESSING FINISHED")
+            event_manager.emit("system_events", "batch_done", 100, "All tasks completed")
 
     async def execute_pipeline(self, video: VideoJob, opts: GlobalOptions, index: int, total: int):
         fid = video.path
         self.active_jobs.add(fid) 
         
         log_handler = setup_logging_bridge(fid)
-        start_time = time.time()
+        temp_audio = Path(video.path).with_suffix(".tmp.wav")
         p = f"[{index + 1}/{total} Files]"
         
-        temp_audio = Path(video.path).with_suffix(".tmp.wav")
         logger.info(f"🚀 {p} STARTING: {video.name}")
 
         try:
@@ -98,15 +129,12 @@ class PipelineOrchestrator:
             event_manager.emit(fid, "processing", 5, f"{p} Step 1/5: Analyzing context...")
             context = self.translator.get_context_profile(video.name)
 
-            # STEP 2: SOURCE (Transcription / User-Selected SRT)
+            # STEP 2: SOURCE
             srt_content = ""
             is_whisper = True
             
+            # Use specific selected path if provided
             if video.workflowMode in ["srt", "hybrid"]:
-                # 1. Check user selected path
-                # 2. Check exact filename.srt
-                # 3. Check for any .srt in folder (fuzzy match)
-                
                 potential_paths = []
                 if video.selectedSrtPath:
                     potential_paths.append(Path(video.selectedSrtPath))
@@ -114,34 +142,17 @@ class PipelineOrchestrator:
                 video_path = Path(video.path)
                 potential_paths.append(video_path.with_suffix(".srt"))
                 
-                # Fuzzy search in the same directory
-                try:
-                    parent_dir = video_path.parent
-                    if parent_dir.exists():
-                        for f in parent_dir.glob("*.srt"):
-                            potential_paths.append(f)
-                except: pass
-
-                found_path = None
-                for path_to_check in potential_paths:
-                    if path_to_check.exists() and path_to_check.is_file():
-                        found_path = path_to_check
-                        break
+                found_path = next((p for p in potential_paths if p.exists() and p.is_file()), None)
 
                 if found_path:
-                    logger.info(f"🔍 DEBUG: Found SRT at: {found_path}")
-                    event_manager.emit(fid, "processing", 10, f"{p} Step 2/5: Found SRT {found_path.name}")
+                    logger.info(f"🔍 Found SRT at: {found_path}")
+                    event_manager.emit(fid, "processing", 10, f"{p} Found SRT {found_path.name}")
                     with open(found_path, "r", encoding="utf-8", errors="ignore") as f:
                         srt_content = f.read()
                     is_whisper = False
-                else:
-                    logger.warning(f"🔍 DEBUG: No SRT found for {video.name}")
-                    if video.workflowMode == "srt":
-                        raise Exception(f"Mode 'SRT Only' failed: No .srt file found in folder.")
 
             if not srt_content:
-                logger.info(f"🎙️ {p} Step 2/5: Running Whisper AI...")
-                event_manager.emit(fid, "processing", 15, f"{p} Step 2/5: Transcribing with Whisper...")
+                event_manager.emit(fid, "processing", 15, f"{p} Transcribing with Whisper...")
                 srt_content = self.transcriber.transcribe(
                     video_path=video.path, 
                     file_id=fid, 
@@ -157,7 +168,7 @@ class PipelineOrchestrator:
             # STEP 4: TRANSLATION
             translated_map = {}
             for lang_code in video.out:
-                event_manager.emit(fid, "processing", 50, f"{p} Step 4/5: Translating to {lang_code}...")
+                event_manager.emit(fid, "processing", 50, f"{p} Translating to {lang_code}...")
                 translation = self.translator.refine_and_translate(
                     srt_content=srt_content,
                     target_lang=lang_code,
@@ -169,6 +180,9 @@ class PipelineOrchestrator:
                     total_files=total,
                     is_whisper_source=is_whisper
                 )
+                
+                # --- APPLY LINE SPLITTING ---
+                #translation = self.split_long_lines(translation)
                 translated_map[lang_code] = translation
                 
                 if opts.generateSRT:
@@ -178,7 +192,7 @@ class PipelineOrchestrator:
 
             # STEP 5: MUXING
             if opts.muxIntoMkv:
-                event_manager.emit(fid, "processing", 90, f"{p} Step 5/5: Muxing into MKV...")
+                event_manager.emit(fid, "processing", 90, f"{p} Muxing into MKV...")
                 self.muxer.mux(
                     video_path=video.path,
                     srts=translated_map,
@@ -226,18 +240,12 @@ async def scan(target_path: str = Query("/data")):
 
 @app.post("/api/process")
 async def process(request: ProcessRequest, background_tasks: BackgroundTasks):
-    # DUMP FULL JSON TO LOGS FOR DEBUGGING
-    print("\n" + "!"*60)
-    print("DEBUG: FULL PAYLOAD RECEIVED")
-    print(request.model_dump_json(indent=2))
-    print("!"*60 + "\n")
-
     background_tasks.add_task(orchestrator.run_batch, request.videos, request.globalOptions)
     return {"status": "accepted", "count": len(request.videos)}
 
 @app.get("/api/events/{file_id:path}")
 async def events(file_id: str):
-    # Ensure the stream uses the raw file_id
+    # This endpoint works for both specific file IDs and "system_events"
     return StreamingResponse(event_manager.subscribe(file_id), media_type="text/event-stream")
 
 @app.get("/health")

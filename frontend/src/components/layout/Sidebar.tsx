@@ -1,16 +1,13 @@
 "use client";
 
 import React, { useMemo } from 'react';
-import { useStudio } from '@/app/page'; // Ensure this matches your final context location
+import { useStudio } from '@/app/page';
 import { 
   Folder, Play, Volume2, Text, Eraser,
   Check, Loader2, ChevronDown, Cpu, Zap, Settings, Lock
 } from 'lucide-react';
 import { VideoFile } from '@/lib/types';
 
-/**
- * Clean, stateless Language Selector component
- */
 function LanguageDropdown({ label, selected, options, isSingle = false, onToggle, disabled = false }: any) {
   const [isOpen, setIsOpen] = React.useState(false);
   
@@ -19,10 +16,10 @@ function LanguageDropdown({ label, selected, options, isSingle = false, onToggle
     : selected.map((id: string) => id.toUpperCase()).join(', ') || 'None';
 
   return (
-    <div className={`relative ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}>
+    <div className={`relative ${disabled ? 'opacity-60' : ''}`}>
       <button 
         onClick={() => !disabled && setIsOpen(!isOpen)}
-        className={`flex items-center justify-between w-full px-3 py-2.5 bg-black/40 border border-white/10 rounded-lg text-[11px] transition-all ${disabled ? 'pointer-events-none' : 'hover:border-indigo-500/50'}`}
+        className={`flex items-center justify-between w-full px-3 py-2.5 bg-black/40 border border-white/10 rounded-lg text-[11px] transition-all ${disabled ? 'cursor-not-allowed' : 'hover:border-indigo-500/50'}`}
       >
         <div className="flex items-center gap-2">
           {label === "SRC" ? <Volume2 size={12} className="text-gray-500" /> : <Text size={12} className="text-gray-500" />}
@@ -62,12 +59,16 @@ export default function Sidebar() {
   const { state, actions } = useStudio();
   const { settings, isScanning, selectedIds, items } = state;
 
-  // Check if any file is currently being processed to lock the UI
+  // REWRITE: Improved recursive check to ensure UI unlocks when all files are 'done'
   const isAnyFileProcessing = useMemo(() => {
     const checkRecursive = (files: VideoFile[]): boolean => {
-      return files.some(f => f.status === 'processing' || (f.children && checkRecursive(f.children)));
+      return files.some(f => 
+        f.status === 'processing' || 
+        f.status === 'queued' || 
+        (f.children && checkRecursive(f.children))
+      );
     };
-    return checkRecursive(items);
+    return checkRecursive(items || []);
   }, [items]);
 
   const availableLanguages = useMemo(() => {
@@ -85,14 +86,14 @@ export default function Sidebar() {
         if (file.children) traverse(file.children);
       });
     };
-    traverse(items);
+    traverse(items || []);
     return list;
   }, [items, selectedIds]);
 
   const hasSelection = selectedVideos.length > 0;
 
   return (
-    <aside className="w-80 bg-[#0a0a0a] border-r border-white/10 flex flex-col p-6 h-full overflow-y-auto custom-scrollbar">
+    <aside className="w-80 bg-[#0a0a0a] border-r border-white/10 flex flex-col p-6 h-full overflow-y-auto custom-scrollbar shadow-[10px_0_30px_rgba(0,0,0,0.5)]">
       <div className="mb-10 flex items-center justify-between">
         <div>
           <h1 className="text-xl font-black text-white tracking-tighter uppercase italic">SubStudio</h1>
@@ -106,14 +107,14 @@ export default function Sidebar() {
           <button 
             disabled={isScanning || isAnyFileProcessing}
             onClick={actions.scan}
-            className="w-full flex items-center justify-center gap-2 bg-white/5 border border-white/10 p-3 rounded-xl hover:bg-white/10 transition-all text-sm font-medium disabled:opacity-30"
+            className="w-full flex items-center justify-center gap-2 bg-white/5 border border-white/10 p-3 rounded-xl hover:bg-white/10 transition-all text-sm font-medium disabled:opacity-20 disabled:cursor-not-allowed"
           >
-            {isScanning ? <Loader2 size={16} className="animate-spin" /> : <Folder size={16} className="text-indigo-400" />}
+            {isScanning ? <Loader2 size={16} className="animate-spin text-indigo-500" /> : <Folder size={16} className="text-indigo-400" />}
             {isScanning ? "Scanning..." : "Sync Files"}
           </button>
         </section>
 
-        <section className={`space-y-6 transition-opacity ${isScanning ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
+        <section className={`space-y-6 transition-all duration-500 ${isScanning || isAnyFileProcessing ? 'opacity-50 grayscale-[0.5]' : 'opacity-100'}`}>
           <div className="flex items-center gap-2 text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em]">
             <Settings size={12} /> Global Engine
           </div>
@@ -129,6 +130,7 @@ export default function Sidebar() {
             />
             <LanguageDropdown 
               label="OUT" 
+              disabled={isAnyFileProcessing}
               selected={settings.targetLanguages} 
               options={availableLanguages}
               onToggle={(id: string) => {
@@ -145,9 +147,10 @@ export default function Sidebar() {
               <Cpu size={12} /> Whisper Engine
             </label>
             <select 
+              disabled={isAnyFileProcessing}
               value={settings.modelSize}
               onChange={(e) => actions.setSettings({ modelSize: e.target.value as any })}
-              className="w-full bg-black/40 border border-white/10 p-2.5 rounded-lg text-xs font-mono outline-none focus:border-indigo-500 transition-colors cursor-pointer"
+              className="w-full bg-black/40 border border-white/10 p-2.5 rounded-lg text-xs font-mono outline-none focus:border-indigo-500 transition-colors cursor-pointer disabled:cursor-not-allowed"
             >
               <option value="tiny">Tiny (Fastest)</option>
               <option value="base">Base (Recommended)</option>
@@ -162,9 +165,10 @@ export default function Sidebar() {
               <Zap size={12} /> Pipeline Logic
             </label>
             <select 
+              disabled={isAnyFileProcessing}
               value={settings.workflowMode || 'hybrid'} 
               onChange={(e) => actions.setSettings({ workflowMode: e.target.value as any })}
-              className="w-full bg-black/40 border border-white/10 p-2.5 rounded-lg text-xs font-mono outline-none focus:border-indigo-500 transition-colors cursor-pointer"
+              className="w-full bg-black/40 border border-white/10 p-2.5 rounded-lg text-xs font-mono outline-none focus:border-indigo-500 transition-colors cursor-pointer disabled:cursor-not-allowed"
             >
               <option value="hybrid">Hybrid: SRT if found else AI</option>
               <option value="whisper">Pure: AI Only</option>
@@ -174,14 +178,16 @@ export default function Sidebar() {
 
           <div className="space-y-3 pt-4 border-t border-white/5">
             <Switch 
-              label={settings.shouldMux ? "Auto-Mux into a new MKV file" : "Just create the SRT files"} 
+              label={settings.shouldMux ? "Mux into MKV" : "SRT Files Only"} 
               checked={settings.shouldMux} 
+              disabled={isAnyFileProcessing}
               onChange={(v: boolean) => actions.setSettings({ shouldMux: v })} 
             />
             <Switch 
-              label="Delete embedded subtitles" 
+              label="Strip existing subs" 
               icon={<Eraser size={12} />}
               checked={settings.stripExistingSubs} 
+              disabled={isAnyFileProcessing}
               danger={true} 
               onChange={(v: boolean) => actions.setSettings({ stripExistingSubs: v })} 
             />
@@ -189,24 +195,24 @@ export default function Sidebar() {
         </section>
       </div>
 
-      <div className="pt-6 border-t border-white/10">
+      <div className="pt-6 border-t border-white/10 bg-[#0a0a0a]">
         <button 
           disabled={!hasSelection || isScanning || isAnyFileProcessing}
           onClick={() => actions.process(selectedVideos)}
           className={`w-full py-4 rounded-xl font-bold text-sm flex items-center justify-center gap-3 transition-all active:scale-[0.98] shadow-2xl 
             ${(!hasSelection || isScanning || isAnyFileProcessing) 
               ? 'bg-white/5 text-gray-600 grayscale opacity-40 cursor-not-allowed shadow-none border border-white/5' 
-              : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-500/20'}`}
+              : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-500/40'}`}
         >
           {isAnyFileProcessing ? (
             <>
               <Loader2 size={18} className="animate-spin text-indigo-400" />
-              ENGINE BUSY...
+              <span>PIPELINE BUSY</span>
             </>
           ) : (
             <>
               <Play size={18} fill="currentColor" />
-              PROCESS {selectedVideos.length} {selectedVideos.length === 1 ? 'FILE' : 'FILES'}
+              <span>PROCESS {selectedVideos.length} {selectedVideos.length === 1 ? 'FILE' : 'FILES'}</span>
             </>
           )}
         </button>
@@ -215,9 +221,9 @@ export default function Sidebar() {
   );
 }
 
-function Switch({ label, icon, checked, onChange, danger = false }: any) {
+function Switch({ label, icon, checked, onChange, danger = false, disabled = false }: any) {
   return (
-    <label className="flex items-center justify-between cursor-pointer group">
+    <label className={`flex items-center justify-between group ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
       <div className="flex items-center gap-2">
         {icon && <span className={checked ? (danger ? 'text-red-500' : 'text-indigo-400') : 'text-gray-600'}>{icon}</span>}
         <span className={`text-[11px] font-medium transition-colors ${
@@ -231,9 +237,10 @@ function Switch({ label, icon, checked, onChange, danger = false }: any) {
       <div className="relative">
         <input 
           type="checkbox" 
+          disabled={disabled}
           className="sr-only peer" 
           checked={checked} 
-          onChange={(e) => onChange(e.target.checked)} 
+          onChange={(e) => !disabled && onChange(e.target.checked)} 
         />
         <div className={`w-7 h-4 rounded-full transition-all peer-checked:after:translate-x-3 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all ${danger ? 'bg-gray-800 peer-checked:bg-red-600' : 'bg-gray-800 peer-checked:bg-indigo-600'}`} />
       </div>
