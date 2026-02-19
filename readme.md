@@ -65,7 +65,7 @@ Tagging: Explicitly sets -metadata:s:X language=fra and -metadata:s:X title="AI 
 Follow these steps to deploy SubStudio on your local machine using Docker.
 
 ### 1. Environment Configuration
-Create a `.env` file in the project root. This file bridges your local media folders with the containerized pipeline.
+Configure the `.env` file in the project root. This file bridges your local media folders with the containerized pipeline.
 
 ```env
 # AI Credentials
