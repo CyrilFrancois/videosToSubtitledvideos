@@ -94,11 +94,18 @@ export default function Sidebar() {
 
   return (
     <aside className="w-80 bg-[#0a0a0a] border-r border-white/10 flex flex-col p-6 h-full overflow-y-auto custom-scrollbar shadow-[10px_0_30px_rgba(0,0,0,0.5)]">
-      <div className="mb-10 flex items-center justify-between">
+      <div className="mb-10 flex items-center justify-start gap-3">
         <div>
-          <h1 className="text-xl font-black text-white tracking-tighter uppercase italic">SubStudio</h1>
-          <div className="h-1 w-8 bg-indigo-600 rounded-full mt-1" />
+          <h1 className="text-xl font-black text-white tracking-tighter uppercase italic leading-none">
+            SubStudio
+          </h1>
+          <div className="h-1 w-8 bg-indigo-600 rounded-full mt-1.5 ml-auto" />
         </div>
+        <img 
+          src="/logo.png" 
+          alt="Logo" 
+          className="w-10 h-10 object-contain"
+        />
       </div>
 
       <div className="flex-1 space-y-8">

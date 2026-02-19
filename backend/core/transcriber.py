@@ -25,11 +25,11 @@ class VideoTranscriber:
         """
         if self.model is None or self.current_model_size != model_size:
             if self.model is not None:
-                logger.warning(f"♻️ Model mismatch. Clearing [{self.current_model_size}] to load [{model_size}]...")
+                logger.warning(f"Model mismatch. Clearing [{self.current_model_size}] to load [{model_size}]...")
                 self.model = None
                 gc.collect()  # Force RAM release
             
-            logger.info(f"🏗️ LOADING WHISPER MODEL: [{model_size}] (Device: CPU, Compute: int8)")
+            logger.info(f"LOADING WHISPER MODEL: [{model_size}] (Device: CPU, Compute: int8)")
             self.model = WhisperModel(model_size, device="cpu", compute_type="int8")
             self.current_model_size = model_size
         else:
@@ -39,7 +39,7 @@ class VideoTranscriber:
 
     def extract_audio(self, video_path: str) -> str:
         audio_path = str(Path(video_path).with_suffix(".tmp.wav"))
-        logger.info(f"🎧 Extracting audio for analysis...")
+        logger.info(f"Extracting audio for analysis...")
         try:
             (
                 ffmpeg
@@ -101,7 +101,7 @@ class VideoTranscriber:
 
             # 3. Context Logging
             if context_prompt:
-                logger.info(f"🎯 CONTEXT BIASING: Providing initial prompt ({len(context_prompt)} chars)")
+                logger.info(f"CONTEXT BIASING: Providing initial prompt ({len(context_prompt)} chars)")
                 # logger.debug(f"Prompt content: {context_prompt}")
             else:
                 logger.warning("⚠️ No context profile provided for this transcription.")

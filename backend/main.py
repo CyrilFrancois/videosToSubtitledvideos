@@ -120,7 +120,7 @@ class PipelineOrchestrator:
         temp_audio = Path(video.path).with_suffix(".tmp.wav")
         p = f"[{index + 1}/{total} Files]"
         
-        logger.info(f"🚀 {p} STARTING: {video.name}")
+        logger.info(f"{p} STARTING: {video.name}")
 
         try:
             # STEP 1: CONTEXT

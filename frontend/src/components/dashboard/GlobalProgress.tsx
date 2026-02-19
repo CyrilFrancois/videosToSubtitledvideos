@@ -48,7 +48,7 @@ function LogTerminal({ logs }: { logs: string[] }) {
       ) : (
         <div className="flex flex-col items-center justify-center h-full text-gray-700 gap-3">
           <Cpu size={24} className="opacity-20" />
-          <span className="text-[10px] uppercase tracking-[0.3em] font-bold">System Standby — Awaiting Input</span>
+          <span className="text-[10px] uppercase tracking-[0.3em] font-bold">System Standby — Awaiting Input (NOT WORKING, SEE YOUR BACKEND LOG)</span>
         </div>
       )}
     </div>
