@@ -35,7 +35,7 @@ class VideoMuxer:
         s, ms = s_ms.split(',')
         return int(h) * 3600 + int(m) * 60 + int(s) + int(ms) / 1000
 
-    def process_srt_content(self, srt_text: str, max_duration: float, max_chars: int = 60) -> str:
+    def process_srt_content(self, srt_text: str, max_duration: float, max_chars: int = 55) -> str:
         """
         1. Splits long lines with \n (Python 3.10 compatible).
         2. Removes subtitle blocks that start after the video duration.

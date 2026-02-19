@@ -4,23 +4,19 @@ SubStudio is a professional-grade, AI-powered media pipeline designed for automa
 ## 🚀 Key Features
 AI Transcription: Powered by OpenAI's Whisper (Tiny to Large models) with a custom +0.4s synchronization offset for perfect audio-visual alignment.
 
-### Intelligent Muxing: Custom FFmpeg engine that preserves all original internal streams while injecting new AI-generated tracks with proper ISO 639-2 language tags.
-
-### Contextual Translation: LLM-based translation logic that maintains narrative consistency across subtitle segments.
-
-### Real-time Orchestration: Decoupled architecture using Server-Sent Events (SSE) for frame-accurate progress tracking.
-
-### External Subtitle Discovery: Automatically scans for and incorporates existing sidecar .srt files during the muxing process.
+* **AI Transcription:** Powered by OpenAI’s **Faster-Whisper** engine. Features a custom **+0.4s synchronization offset** to compensate for audio onset latency, ensuring perfect visual alignment.
+* **Intelligent Muxing:** A custom FFmpeg engine that preserves original internal streams while injecting new AI-generated tracks with proper **ISO 639-2** language tags and descriptive titles.
+* **Contextual Translation:** LLM-based translation logic that maintains narrative consistency across subtitle segments, avoiding the "stilted" feel of traditional line-by-line translation.
+* **Real-time Orchestration:** A decoupled architecture using **Server-Sent Events (SSE)** for frame-accurate progress tracking and live "Execution Terminal" logs.
+* **External Subtitle Discovery:** Automatically scans for and incorporates existing sidecar `.srt` files during the muxing process.
 
 ## 🏗️ Architecture & Communication
 SubStudio operates on a decoupled Client-Server model optimized for high-throughput media processing.
 
-REST API (FastAPI): Standard request/response for folder scanning, job initialization, and manual uploads.
-
-Server-Sent Events (SSE): A real-time stream providing progress percentages (20% to 100%), status changes, and terminal logs to the Next.js frontend.
-
-Shared Volume: Both services mount a shared /data volume. The backend performs in-place processing, minimizing I/O overhead by avoiding unnecessary file copies.
-
+* **Frontend (Next.js 14):** A React-based "Studio" dashboard utilizing a centralized `StudioContext` for state management.
+* **Backend (FastAPI):** A high-performance Python server handling AI inference and FFmpeg manipulation.
+* **Server-Sent Events (SSE):** Provides a real-time stream from backend to frontend for progress percentages (20% to 100%), status changes, and terminal logs.
+* **Shared Volume:** Both services mount a shared `/data` volume. The backend performs **in-place processing**, minimizing I/O overhead by avoiding unnecessary file copies.
 
 ## 📡 API Contracts & Data Formats
 1. Folder Discovery (GET /scan)

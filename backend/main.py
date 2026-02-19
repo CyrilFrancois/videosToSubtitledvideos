@@ -38,12 +38,12 @@ class VideoJob(BaseModel):
     selectedSrtPath: Optional[str] = None 
     src: Optional[Any] = "auto"
     out: List[str] = ["fr"]
-    workflowMode: str = "whisper"
+    workflowMode: str = "pure" # Defaulted to match your new UI
     syncOffset: float = 0.0
     stripExistingSubs: bool = False
 
 class GlobalOptions(BaseModel):
-    transcriptionEngine: str = "base"
+    transcriptionEngine: str = "medium" # Defaulted to Medium
     generateSRT: bool = True
     muxIntoMkv: bool = True
     cleanUp: bool = False
@@ -58,7 +58,8 @@ class PipelineOrchestrator:
     def __init__(self):
         self.scanner = VideoScanner(base_path="/data")
         self.processor = SubtitleProcessor()
-        self.transcriber = VideoTranscriber(model_size="base")
+        # Initializing with a default, but run_batch will swap this if needed
+        self.transcriber = VideoTranscriber(model_size="medium")
         self.translator = SubtitleTranslator()
         self.muxer = VideoMuxer()
         
@@ -66,7 +67,7 @@ class PipelineOrchestrator:
         self._last_scan_time = 0
         self._cached_files = []
 
-    def split_long_lines(self, srt_text: str, max_chars: int = 45) -> str:
+    def split_long_lines(self, srt_text: str, max_chars: int = 55) -> str:
         """Adds \n to subtitle lines that are too long."""
         def process_block(match):
             index, times, text = match.groups()
@@ -75,7 +76,6 @@ class PipelineOrchestrator:
             
             for line in lines:
                 if len(line) > max_chars:
-                    # Find space closest to the middle to split
                     mid = len(line) // 2
                     space_indices = [i for i, char in enumerate(line) if char == ' ']
                     if space_indices:
@@ -83,11 +83,9 @@ class PipelineOrchestrator:
                         line = line[:best_space] + '\n' + line[best_space+1:]
                 new_lines.append(line)
             
-            # Fix: Join lines into a variable first to avoid backslashes in the f-string
             joined_content = '\n'.join(new_lines)
             return f"{index}\n{times}\n{joined_content}\n\n"
 
-        # Regex to match SRT blocks: Index, Time range, and Text content
         pattern = re.compile(r"(\d+)\n(\d{2}:\d{2}:\d{2},\d{3} --> \d{2}:\d{2}:\d{2},\d{3})\n([\s\S]*?)(?:\n\n|\Z)")
         return pattern.sub(process_block, srt_text)
 
@@ -103,14 +101,19 @@ class PipelineOrchestrator:
     async def run_batch(self, videos: List[VideoJob], opts: GlobalOptions):
         total = len(videos)
         try:
+            # CHECK: Does the loaded Whisper model match the UI selection?
+            selected_model = opts.transcriptionEngine
+            if self.transcriber.requested_model != selected_model:
+                logger.info(f"🔄 SWAPPING ENGINE: {self.transcriber.requested_model} -> {selected_model}")
+                # Re-initialize the transcriber with the correct model size
+                self.transcriber = VideoTranscriber(model_size=selected_model)
+
             for idx, video in enumerate(videos):
                 if video.path in self.active_jobs:
                     logger.warning(f"⚠️ [Skip] {video.name} is already in the pipeline.")
                     continue
                 await self.execute_pipeline(video, opts, idx, total)
         finally:
-            # --- NOTIFY FRONTEND FINISHED ---
-            # We use a reserved ID "system_events" to signal the UI to unlock
             logger.info("🏁 BATCH PROCESSING FINISHED")
             event_manager.emit("system_events", "batch_done", 100, "All tasks completed")
 
@@ -125,15 +128,15 @@ class PipelineOrchestrator:
         logger.info(f"🚀 {p} STARTING: {video.name}")
 
         try:
-            # STEP 1: CONTEXT
+            # STEP 1: CONTEXT (Analyzing character names, keywords, and plot)
             event_manager.emit(fid, "processing", 5, f"{p} Step 1/5: Analyzing context...")
             context = self.translator.get_context_profile(video.name)
 
-            # STEP 2: SOURCE
+            # STEP 2: SOURCE (Transcription or SRT Import)
             srt_content = ""
             is_whisper = True
             
-            # Use specific selected path if provided
+            # Logic for Hybrid or SRT-Only modes
             if video.workflowMode in ["srt", "hybrid"]:
                 potential_paths = []
                 if video.selectedSrtPath:
@@ -151,21 +154,25 @@ class PipelineOrchestrator:
                         srt_content = f.read()
                     is_whisper = False
 
+            # If no SRT found or mode is 'pure' (whisper), run transcription
             if not srt_content:
                 event_manager.emit(fid, "processing", 15, f"{p} Transcribing with Whisper...")
+                
+                # PASSING CONTEXT: We send the results from Step 1 to bias the AI's vocabulary
                 srt_content = self.transcriber.transcribe(
                     video_path=video.path, 
                     file_id=fid, 
                     on_progress=event_manager.emit,
                     current_file=index + 1,
-                    total_files=total
+                    total_files=total,
+                    context_prompt=context 
                 )
 
             # STEP 3: SYNC
             if video.syncOffset != 0:
                 srt_content = self.processor.apply_offset(srt_content, video.syncOffset)
 
-            # STEP 4: TRANSLATION
+            # STEP 4: TRANSLATION & REFINING
             translated_map = {}
             for lang_code in video.out:
                 event_manager.emit(fid, "processing", 50, f"{p} Translating to {lang_code}...")
@@ -181,8 +188,8 @@ class PipelineOrchestrator:
                     is_whisper_source=is_whisper
                 )
                 
-                # --- APPLY LINE SPLITTING ---
-                #translation = self.split_long_lines(translation)
+                # Line splitting for readability
+                translation = self.split_long_lines(translation)
                 translated_map[lang_code] = translation
                 
                 if opts.generateSRT:
@@ -190,7 +197,7 @@ class PipelineOrchestrator:
                     with open(out_srt, "w", encoding="utf-8") as f:
                         f.write(translation)
 
-            # STEP 5: MUXING
+            # STEP 5: MUXING (Merging into MKV)
             if opts.muxIntoMkv:
                 event_manager.emit(fid, "processing", 90, f"{p} Muxing into MKV...")
                 self.muxer.mux(
@@ -245,7 +252,6 @@ async def process(request: ProcessRequest, background_tasks: BackgroundTasks):
 
 @app.get("/api/events/{file_id:path}")
 async def events(file_id: str):
-    # This endpoint works for both specific file IDs and "system_events"
     return StreamingResponse(event_manager.subscribe(file_id), media_type="text/event-stream")
 
 @app.get("/health")
