@@ -153,10 +153,10 @@ export default function Sidebar() {
               className="w-full bg-black/40 border border-white/10 p-2.5 rounded-lg text-xs font-mono outline-none focus:border-indigo-500 transition-colors cursor-pointer disabled:cursor-not-allowed"
             >
               <option value="tiny">Tiny (Fastest)</option>
-              <option value="base">Base (Recommended)</option>
-              <option value="small">Small</option>
-              <option value="medium">Medium</option>
-              <option value="large">Large-v3 (Precise)</option>
+              <option value="base">Base (~1 GB)</option>
+              <option value="small">Small (~2 GB)</option>
+              <option value="medium">Medium (~5 GB)</option>
+              <option value="large">Large-v3 (~10 GB)</option>
             </select>
           </div>
 
