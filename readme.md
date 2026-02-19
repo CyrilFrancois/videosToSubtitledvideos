@@ -61,17 +61,31 @@ Injection: Adds generated tracks as new streams.
 Tagging: Explicitly sets -metadata:s:X language=fra and -metadata:s:X title="AI French".
 
 ## 🚦 Getting Started
-Configure Environment: Create a .env file in the root directory:
 
-Code snippet
-WHISPER_MODEL=base
-LLM_API_KEY=your_key_here
-DATA_PATH=./data
-Launch via Docker Compose:
+Follow these steps to deploy SubStudio on your local machine using Docker.
 
-Bash
+### 1. Environment Configuration
+Create a `.env` file in the project root. This file bridges your local media folders with the containerized pipeline.
+
+```env
+# AI Credentials
+OPENAI_API_KEY=your_key_here
+
+# Media Path (Point this to your local video library)
+NEXT_PUBLIC_MEDIA_PATH=C:/Videos
+```
+
+### 2. Launch the Pipeline
+SubStudio uses a decoupled architecture. Docker Compose will automatically build the Next.js frontend and the FastAPI/Whisper backend.
+
+```bash
 docker-compose up --build
-Access the Dashboard: Open http://localhost:3000 to start processing your library.
+```
+
+### 3. Access the Studio
+Once the containers are healthy, the dashboard will be available at:
+👉 http://localhost:3000
+Note: On the first run, the backend will download the Whisper model (e.g., Medium) to the internal cache. This may take a few minutes depending on your internet speed.
 
 ## ⚖️ License
 Distributed under the MIT License. See LICENSE for more information.
