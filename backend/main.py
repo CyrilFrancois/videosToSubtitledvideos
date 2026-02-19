@@ -38,12 +38,12 @@ class VideoJob(BaseModel):
     selectedSrtPath: Optional[str] = None 
     src: Optional[Any] = "auto"
     out: List[str] = ["fr"]
-    workflowMode: str = "pure" # Defaulted to match your new UI
+    workflowMode: str = "pure"
     syncOffset: float = 0.0
     stripExistingSubs: bool = False
 
 class GlobalOptions(BaseModel):
-    transcriptionEngine: str = "medium" # Defaulted to Medium
+    transcriptionEngine: str = "medium"
     generateSRT: bool = True
     muxIntoMkv: bool = True
     cleanUp: bool = False
@@ -58,7 +58,7 @@ class PipelineOrchestrator:
     def __init__(self):
         self.scanner = VideoScanner(base_path="/data")
         self.processor = SubtitleProcessor()
-        # Initializing with a default, but run_batch will swap this if needed
+        # New Transcriber starts "empty" (no model in RAM yet)
         self.transcriber = VideoTranscriber(model_size="medium")
         self.translator = SubtitleTranslator()
         self.muxer = VideoMuxer()
@@ -101,13 +101,8 @@ class PipelineOrchestrator:
     async def run_batch(self, videos: List[VideoJob], opts: GlobalOptions):
         total = len(videos)
         try:
-            # CHECK: Does the loaded Whisper model match the UI selection?
-            selected_model = opts.transcriptionEngine
-            if self.transcriber.requested_model != selected_model:
-                logger.info(f"🔄 SWAPPING ENGINE: {self.transcriber.requested_model} -> {selected_model}")
-                # Re-initialize the transcriber with the correct model size
-                self.transcriber = VideoTranscriber(model_size=selected_model)
-
+            # We no longer re-init self.transcriber here.
+            # The lazy-loader inside transcriber.py handles the swap.
             for idx, video in enumerate(videos):
                 if video.path in self.active_jobs:
                     logger.warning(f"⚠️ [Skip] {video.name} is already in the pipeline.")
@@ -128,7 +123,7 @@ class PipelineOrchestrator:
         logger.info(f"🚀 {p} STARTING: {video.name}")
 
         try:
-            # STEP 1: CONTEXT (Analyzing character names, keywords, and plot)
+            # STEP 1: CONTEXT
             event_manager.emit(fid, "processing", 5, f"{p} Step 1/5: Analyzing context...")
             context = self.translator.get_context_profile(video.name)
 
@@ -136,7 +131,6 @@ class PipelineOrchestrator:
             srt_content = ""
             is_whisper = True
             
-            # Logic for Hybrid or SRT-Only modes
             if video.workflowMode in ["srt", "hybrid"]:
                 potential_paths = []
                 if video.selectedSrtPath:
@@ -154,17 +148,19 @@ class PipelineOrchestrator:
                         srt_content = f.read()
                     is_whisper = False
 
-            # If no SRT found or mode is 'pure' (whisper), run transcription
+            # If no SRT found or mode is 'pure', run transcription
             if not srt_content:
                 event_manager.emit(fid, "processing", 15, f"{p} Transcribing with Whisper...")
                 
-                # PASSING CONTEXT: We send the results from Step 1 to bias the AI's vocabulary
+                # UPDATED: We pass both the model_size and the context.
+                # The transcriber will check if 'opts.transcriptionEngine' is already loaded.
                 srt_content = self.transcriber.transcribe(
                     video_path=video.path, 
                     file_id=fid, 
                     on_progress=event_manager.emit,
                     current_file=index + 1,
                     total_files=total,
+                    model_size=opts.transcriptionEngine,
                     context_prompt=context 
                 )
 
@@ -188,7 +184,6 @@ class PipelineOrchestrator:
                     is_whisper_source=is_whisper
                 )
                 
-                # Line splitting for readability
                 translation = self.split_long_lines(translation)
                 translated_map[lang_code] = translation
                 
@@ -197,7 +192,7 @@ class PipelineOrchestrator:
                     with open(out_srt, "w", encoding="utf-8") as f:
                         f.write(translation)
 
-            # STEP 5: MUXING (Merging into MKV)
+            # STEP 5: MUXING
             if opts.muxIntoMkv:
                 event_manager.emit(fid, "processing", 90, f"{p} Muxing into MKV...")
                 self.muxer.mux(
@@ -217,6 +212,7 @@ class PipelineOrchestrator:
             event_manager.emit(fid, "error", 0, str(e))
         finally:
             self.active_jobs.discard(fid)
+            # Audio cleanup is handled inside the transcriber now, but safe to keep here
             if temp_audio.exists():
                 try: temp_audio.unlink()
                 except: pass
