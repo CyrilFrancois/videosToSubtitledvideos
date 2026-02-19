@@ -156,7 +156,7 @@ export default function Sidebar() {
               <option value="base">Base (~1 GB)</option>
               <option value="small">Small (~2 GB)</option>
               <option value="medium">Medium (~5 GB)</option>
-              <option value="large">Large-v3 (~10 GB)</option>
+              <option value="large">Large-v3 (⚠ ~10 GB)</option>
             </select>
           </div>
 
