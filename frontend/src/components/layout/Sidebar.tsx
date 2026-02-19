@@ -119,6 +119,15 @@ export default function Sidebar() {
             {isScanning ? <Loader2 size={16} className="animate-spin text-indigo-500" /> : <Folder size={16} className="text-indigo-400" />}
             {isScanning ? "Scanning..." : "Sync Files"}
           </button>
+
+        <div className="px-1 pt-1">
+            <div className="flex items-center gap-1.5 opacity-40 hover:opacity-100 transition-opacity cursor-default">
+              <div className="w-1 h-1 rounded-full bg-indigo-500 animate-pulse" />
+              <span className="text-[9px] font-mono text-gray-400 truncate">
+                Mounted Volume: {process.env.NEXT_PUBLIC_MEDIA_PATH || 'No path set'}
+              </span>
+            </div>
+          </div>
         </section>
 
         <section className={`space-y-6 transition-all duration-500 ${isScanning || isAnyFileProcessing ? 'opacity-50 grayscale-[0.5]' : 'opacity-100'}`}>

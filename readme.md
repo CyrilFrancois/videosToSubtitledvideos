@@ -1,6 +1,10 @@
 # 🎬 SubStudio: Local Processing Studio
 SubStudio is a professional-grade, AI-powered media pipeline designed for automated subtitle generation, context-aware translation, and intelligent MKV muxing. By leveraging local Whisper models and LLM intelligence, it transforms raw video files into fully accessible, multi-lingual media without ever leaving your local network.
 
+<p align="center">
+  <img src="ressources/screen.png" width="400">
+</p>
+
 ## 🚀 Key Features
 AI Transcription: Powered by OpenAI's Whisper (Tiny to Large models) with a custom +0.4s synchronization offset for perfect audio-visual alignment.
 
@@ -124,5 +128,4 @@ backend/core/events.py muxer.py scanner.py subtitle_processor.py transcriber.py 
 ├── .gitignore
 ├── docker-compose.yml         # Orchestration
 ├── readme.md
-└── TODELETE.md
 ```
