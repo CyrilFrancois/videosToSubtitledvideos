@@ -67,7 +67,7 @@ class PipelineOrchestrator:
         self._last_scan_time = 0
         self._cached_files = []
 
-    def split_long_lines(self, srt_text: str, max_chars: int = 55) -> str:
+    def split_long_lines(self, srt_text: str, max_chars: int = 50) -> str:
         """Adds \n to subtitle lines that are too long."""
         def process_block(match):
             index, times, text = match.groups()
