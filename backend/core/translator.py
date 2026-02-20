@@ -21,7 +21,7 @@ class SubtitleTranslator:
         prompt = f"""Identify the media from this filename: '{filename}'
         Return a 'Story Bible' for a translator:
         - Series/Movie Title
-        - Lead Characters (Names & Genders)
+        - Characters (Names, Genders, talking default)
         - Tone (Slang, Formal, Medical, Sci-Fi)
         - Brief Plot Context
         If unknown, infer from keywords."""
@@ -119,7 +119,8 @@ class SubtitleTranslator:
         if is_whisper:
             whisper_instruction = """
             NOTE: Source is AI-transcribed and may have phonetic errors. 
-            Use the provided context bible to fix character names and terms.
+            Use the provided context bible to fix character names and terms in the speech.
+            No other information than the translation.
             """
 
         return f"""You are an expert subtitle translator ({lang}).
@@ -131,6 +132,6 @@ class SubtitleTranslator:
         RULES:
         1. Keep TIMESTAMPS and INDEX NUMBERS exactly as provided.
         2. Preserve SRT structure: [Index]\\n[Time] --> [Time]\\n[Text]\\n\\n
-        3. Translate only the text content.
+        3. Translate only the text content. Don't add the name of the people talking... focus only on the translation.
         4. Do not include any explanations or markdown.
         """

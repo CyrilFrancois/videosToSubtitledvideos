@@ -6,7 +6,7 @@ SubStudio is a professional-grade, AI-powered media pipeline designed for automa
 </p>
 
 ## 🚀 Key Features
-AI Transcription: Powered by OpenAI's Whisper (Tiny to Large models) with a custom +0.4s synchronization offset for perfect audio-visual alignment.
+AI Transcription: Powered by OpenAI's Whisper (Tiny to Large models).
 
 * **AI Transcription:** Powered by OpenAI’s **Faster-Whisper** engine. Features a custom **+0.4s synchronization offset** to compensate for audio onset latency, ensuring perfect visual alignment.
 * **Intelligent Muxing:** A custom FFmpeg engine that preserves original internal streams while injecting new AI-generated tracks with proper **ISO 639-2** language tags and descriptive titles.

@@ -58,7 +58,6 @@ class PipelineOrchestrator:
     def __init__(self):
         self.scanner = VideoScanner(base_path="/data")
         self.processor = SubtitleProcessor()
-        # New Transcriber starts "empty" (no model in RAM yet)
         self.transcriber = VideoTranscriber(model_size="medium")
         self.translator = SubtitleTranslator()
         self.muxer = VideoMuxer()
